@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "BHV6VaCSmd9h4F3QR_RCl"
+uri = "file://startup-scripts.zip"
+type = "unspecified"
+title = "startup-scripts.zip — start.bat (Windows) + start.sh (Mac/Linux)"
