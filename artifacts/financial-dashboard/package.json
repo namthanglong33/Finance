@@ -44,6 +44,8 @@
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "catalog:",
     "@tanstack/react-query": "catalog:",
+    "@types/bcryptjs": "^3.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-csv": "^1.1.10",
@@ -77,7 +79,9 @@
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
+    "bcryptjs": "^3.0.3",
     "d3-scale-chromatic": "^3.1.0",
+    "jsonwebtoken": "^9.0.3",
     "papaparse": "^5.5.4",
     "react-csv": "^2.2.2"
   }

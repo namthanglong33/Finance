@@ -3,12 +3,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { FinancialProvider } from "./context/FinancialContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Layout } from "./components/layout";
 import Dashboard from "./pages/dashboard";
 import InputPage from "./pages/input";
 import ResultsPage from "./pages/results";
 import OptimizePage from "./pages/optimize";
 import CalculationPage from "./pages/calculation";
+import LoginPage from "./pages/login";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -21,6 +23,20 @@ const queryClient = new QueryClient({
 });
 
 function Router() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
   return (
     <Layout>
       <Switch>
@@ -38,14 +54,16 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <FinancialProvider>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
-      </FinancialProvider>
+      <AuthProvider>
+        <FinancialProvider>
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
+            <Toaster />
+          </TooltipProvider>
+        </FinancialProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
