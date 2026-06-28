@@ -1,0 +1,555 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Financial calculation API for construction consulting
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: financial
+    description: Financial calculation operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /financial/fee-rates:
+    post:
+      operationId: getFeeRates
+      tags: [financial]
+      summary: Get interpolated fee rates from TT 12/2021
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeeRateInput"
+      responses:
+        "200":
+          description: Interpolated fee rates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeRateResult"
+
+  /financial/calculate:
+    post:
+      operationId: calculate
+      tags: [financial]
+      summary: Run full financial model calculation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinancialInput"
+      responses:
+        "200":
+          description: Full financial calculation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinancialResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /financial/optimize:
+    post:
+      operationId: optimize
+      tags: [financial]
+      summary: Optimization plan to reach target net profit (phương_an_toi_uu logic)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptimizeInput"
+      responses:
+        "200":
+          description: Optimization result with full 5-section analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizeResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /financial/scenarios:
+    get:
+      operationId: getScenarios
+      tags: [financial]
+      summary: Get predefined scenario templates
+      responses:
+        "200":
+          description: List of scenario templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Scenario"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    FeeRateInput:
+      type: object
+      required:
+        - constructionValue
+        - constructionGrade
+      properties:
+        constructionValue:
+          type: number
+          description: Construction package value (VND, excluding VAT)
+        equipmentCost:
+          type: number
+          description: Equipment cost (VND)
+        constructionGrade:
+          type: string
+          description: "Construction grade: Cấp đặc biệt | Cấp I | Cấp II | Cấp III | Cấp IV"
+
+    FeeRateResult:
+      type: object
+      required:
+        - supervisionRate
+        - designRate
+        - supervisionFee
+        - designFee
+        - vatAmount
+        - totalWithVat
+      properties:
+        supervisionRate:
+          type: number
+          description: Supervision fee rate (decimal)
+        designRate:
+          type: number
+          description: Design fee rate (decimal)
+        supervisionFee:
+          type: number
+          description: Supervision fee (VND, excl. VAT)
+        designFee:
+          type: number
+          description: Design fee (VND, excl. VAT)
+        vatAmount:
+          type: number
+          description: VAT amount
+        totalWithVat:
+          type: number
+          description: Total fee including VAT
+
+    FinancialInput:
+      type: object
+      required:
+        - constructionValue
+        - supervisionRate
+        - designRate
+        - kickbackRateType1
+        - kickbackRateType2
+        - corporateTaxRate
+        - directorSalaryMonthly
+        - numTechnicians
+        - technicianSalaryMonthly
+        - accountantSalaryMonthly
+        - officeRentMonthly
+        - travelEntertainMonthly
+        - otherCostMonthly
+        - insuranceRate
+        - vatRate
+        - signingCostRateType1
+        - signingCostRateType2
+      properties:
+        constructionValue:
+          type: number
+          description: Annual construction value (VND, excl VAT)
+        supervisionRate:
+          type: number
+          description: Supervision fee rate (decimal, e.g. 0.03285)
+        designRate:
+          type: number
+          description: Design fee rate (decimal)
+        kickbackRateType1:
+          type: number
+          description: CĐT kickback rate for contract Type 1 (decimal)
+        kickbackRateType2:
+          type: number
+          description: CĐT kickback rate for contract Type 2 (decimal)
+        corporateTaxRate:
+          type: number
+          description: Corporate income tax rate (decimal, e.g. 0.17)
+        directorSalaryMonthly:
+          type: number
+          description: Director monthly salary (VND)
+        numTechnicians:
+          type: number
+          description: Number of direct technical staff (Type 2 only)
+        technicianSalaryMonthly:
+          type: number
+          description: Technician monthly salary (VND)
+        accountantSalaryMonthly:
+          type: number
+          description: Accountant monthly salary (VND)
+        officeRentMonthly:
+          type: number
+          description: Office rent per month (VND)
+        travelEntertainMonthly:
+          type: number
+          description: Travel & entertainment per month (VND)
+        otherCostMonthly:
+          type: number
+          description: Other costs per month (VND)
+        insuranceRate:
+          type: number
+          description: Employer insurance rate (decimal, e.g. 0.215)
+        vatRate:
+          type: number
+          description: Output VAT rate (decimal, e.g. 0.08)
+        signingCostRateType1:
+          type: number
+          description: Document signing cost rate for Type 1 (decimal)
+        signingCostRateType2:
+          type: number
+          description: Document signing cost rate for Type 2 (decimal)
+        fixedCostDeductibleRate:
+          type: number
+          description: Rate of fixed costs with valid VAT invoices (decimal)
+        maxWageFundRate:
+          type: number
+          description: Max wage fund as % of revenue for Type 2 (decimal, e.g. 0.15)
+
+    ContractResult:
+      type: object
+      required:
+        - revenue
+        - kickback
+        - laborCost
+        - signingCost
+        - fixedCost
+        - taxableIncome
+        - corporateTax
+        - vatOut
+        - vatIn
+        - vatDue
+        - netProfit
+        - netProfitMonthly
+        - netMargin
+        - cashFlowBeforeTax
+        - breakEvenRevenue
+        - technicianWageRatio
+        - isViable
+        - wageFundLimit
+        - wageFundUsed
+        - wageFundRemaining
+        - maxTechniciansAllowed
+        - wageFundExceeded
+      properties:
+        revenue:
+          type: number
+        kickback:
+          type: number
+        laborCost:
+          type: number
+        signingCost:
+          type: number
+        fixedCost:
+          type: number
+        taxableIncome:
+          type: number
+        corporateTax:
+          type: number
+        vatOut:
+          type: number
+        vatIn:
+          type: number
+        vatDue:
+          type: number
+        netProfit:
+          type: number
+        netProfitMonthly:
+          type: number
+        netMargin:
+          type: number
+        cashFlowBeforeTax:
+          type: number
+        breakEvenRevenue:
+          type: number
+        technicianWageRatio:
+          type: number
+        isViable:
+          type: boolean
+        wageFundLimit:
+          type: number
+          description: Max total wage fund for Type 2 (revenue * maxWageFundRate); 0 for Type 1
+        wageFundUsed:
+          type: number
+          description: Actual total labor cost (director + accountant + technicians with insurance)
+        wageFundRemaining:
+          type: number
+          description: wageFundLimit - wageFundUsed; negative means over budget
+        maxTechniciansAllowed:
+          type: number
+          description: Max technicians that fit within the wage fund after director + accountant
+        wageFundExceeded:
+          type: boolean
+          description: True when current labor cost exceeds the wage fund limit (Type 2 only)
+
+    FinancialResult:
+      type: object
+      required:
+        - supervisionRevenue
+        - designRevenue
+        - totalRevenue
+        - type1
+        - type2
+        - recommendation
+      properties:
+        supervisionRevenue:
+          type: number
+        designRevenue:
+          type: number
+        totalRevenue:
+          type: number
+        type1:
+          $ref: "#/components/schemas/ContractResult"
+        type2:
+          $ref: "#/components/schemas/ContractResult"
+        recommendation:
+          type: string
+
+    OptimizeInput:
+      type: object
+      required:
+        - financialInput
+        - targetNetProfit
+        - allocationL1
+        - allocationL2
+      properties:
+        financialInput:
+          $ref: "#/components/schemas/FinancialInput"
+        targetNetProfit:
+          type: number
+          description: Target annual net profit (VND)
+        allocationL1:
+          $ref: "#/components/schemas/CostAllocation"
+        allocationL2:
+          $ref: "#/components/schemas/CostAllocation"
+
+    CostAllocation:
+      type: object
+      required:
+        - training
+        - equipment
+        - office
+        - consultants
+        - marketing
+        - other
+      properties:
+        training:
+          type: number
+          description: Training & capacity building (%)
+        equipment:
+          type: number
+          description: Equipment & software (%)
+        office:
+          type: number
+          description: Office & admin upgrade (%)
+        consultants:
+          type: number
+          description: External consultants/contractors (%)
+        marketing:
+          type: number
+          description: Marketing & business development (%)
+        other:
+          type: number
+          description: Contingency & other (%)
+
+    OptimizeResult:
+      type: object
+      required:
+        - type1
+        - type2
+      properties:
+        type1:
+          $ref: "#/components/schemas/OptimizeContractResult"
+        type2:
+          $ref: "#/components/schemas/OptimizeContractResult"
+
+    OptimizeContractResult:
+      type: object
+      required:
+        - scenario
+        - currentNetProfit
+        - currentNetProfitMonthly
+        - currentNetMargin
+        - currentTaxableIncome
+        - currentCorporateTax
+        - currentVatDue
+        - targetNetProfit
+        - targetNetProfitMonthly
+        - breakevenRevenue
+        - currentRevenue
+        - safetyMarginVND
+        - revenueGapPct
+        - requiredAdditionalCost
+        - requiredAdditionalCostMonthly
+        - isAllocationValid
+        - allocationBreakdown
+        - afterOptimizeTaxableIncome
+        - afterOptimizeCorporateTax
+        - afterOptimizeNetProfit
+        - afterOptimizeNetProfitMonthly
+        - afterOptimizeNetMargin
+        - taxSaving
+        - requiredRevenueForTarget
+        - requiredRevenueIncreaseVND
+        - requiredRevenueIncreasePct
+        - requiredKickbackRateForTarget
+        - requiredCostReductionForTarget
+        - legalNotes
+      properties:
+        scenario:
+          type: string
+          description: "tax_reduce (can add costs) | revenue_gap (need revenue/cost changes)"
+        currentNetProfit:
+          type: number
+        currentNetProfitMonthly:
+          type: number
+        currentNetMargin:
+          type: number
+        currentTaxableIncome:
+          type: number
+        currentCorporateTax:
+          type: number
+        currentVatDue:
+          type: number
+        targetNetProfit:
+          type: number
+        targetNetProfitMonthly:
+          type: number
+        breakevenRevenue:
+          type: number
+          description: Theoretical breakeven revenue (net profit = 0)
+        currentRevenue:
+          type: number
+        safetyMarginVND:
+          type: number
+          description: currentRevenue - breakevenRevenue (negative = below breakeven)
+        revenueGapPct:
+          type: number
+          description: (currentRevenue / breakevenRevenue) - 1 as decimal
+        requiredAdditionalCost:
+          type: number
+          description: Additional deductible cost to reach target (0 if profit < target)
+        requiredAdditionalCostMonthly:
+          type: number
+        isAllocationValid:
+          type: boolean
+        allocationBreakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/AllocationItem"
+        afterOptimizeTaxableIncome:
+          type: number
+        afterOptimizeCorporateTax:
+          type: number
+        afterOptimizeNetProfit:
+          type: number
+        afterOptimizeNetProfitMonthly:
+          type: number
+        afterOptimizeNetMargin:
+          type: number
+        taxSaving:
+          type: number
+        requiredRevenueForTarget:
+          type: number
+          description: Minimum revenue needed to reach target net profit
+        requiredRevenueIncreaseVND:
+          type: number
+        requiredRevenueIncreasePct:
+          type: number
+        requiredKickbackRateForTarget:
+          type: number
+          description: Max kickback rate allowed to reach target at current revenue
+        requiredCostReductionForTarget:
+          type: number
+          description: Total cost reduction needed to reach target (fixed + labor)
+        legalNotes:
+          type: array
+          items:
+            type: string
+
+    AllocationItem:
+      type: object
+      required:
+        - category
+        - percentage
+        - amount
+        - amountMonthly
+        - legalBasis
+        - practiceNote
+      properties:
+        category:
+          type: string
+        percentage:
+          type: number
+        amount:
+          type: number
+        amountMonthly:
+          type: number
+        legalBasis:
+          type: string
+        practiceNote:
+          type: string
+
+    Scenario:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - input
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        input:
+          $ref: "#/components/schemas/FinancialInput"
