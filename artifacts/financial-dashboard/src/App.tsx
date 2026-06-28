@@ -10,6 +10,7 @@ import InputPage from "./pages/input";
 import ResultsPage from "./pages/results";
 import OptimizePage from "./pages/optimize";
 import CalculationPage from "./pages/calculation";
+import AdminUsersPage from "./pages/admin-users";
 import LoginPage from "./pages/login";
 import NotFound from "@/pages/not-found";
 
@@ -45,6 +46,7 @@ function Router() {
         <Route path="/results" component={ResultsPage} />
         <Route path="/optimize" component={OptimizePage} />
         <Route path="/calculation" component={CalculationPage} />
+        <Route path="/admin/users" component={AdminUsersPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
