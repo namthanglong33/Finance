@@ -227,8 +227,9 @@ function OutsourcedStaffCard({
   const [excludeInsurance, setExcludeInsurance] = useState(false);
 
 
-  // PIT: 10% withheld at source when income ≥ 2M/payment (Điều 25 TT 111/2013)
-  const hasPIT = monthlyGross >= 2_000_000;
+  // PIT: 10% khấu trừ tại nguồn khi thu nhập ≥ 15 triệu/tháng
+  const PIT_THRESHOLD = 15_000_000;
+  const hasPIT = monthlyGross >= PIT_THRESHOLD;
   const pitPerMonth = hasPIT ? monthlyGross * 0.10 : 0;
   const pitAnnual = pitPerMonth * 12;
 
@@ -446,7 +447,7 @@ function OutsourcedStaffCard({
                 {hasPIT ? (
                   <tr className="border-t border-border/40 bg-amber-50/50 dark:bg-amber-950/10">
                     <td className="px-4 py-2.5 font-medium text-amber-800 dark:text-amber-300">
-                      Khấu trừ TNCN 10% (tại nguồn)
+                      Khấu trừ TNCN 10% (lương ≥ 15 triệu/tháng)
                     </td>
                     <td className="px-4 py-2.5 text-right text-amber-700 dark:text-amber-400">
                       ({formatVND(pitPerMonth)})
@@ -464,7 +465,7 @@ function OutsourcedStaffCard({
                     <td className="px-4 py-2.5 text-right text-muted-foreground">—</td>
                     <td className="px-4 py-2.5 text-right text-muted-foreground">—</td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground hidden sm:table-cell">
-                      Lương &lt; 2 tr/lần → miễn khấu trừ
+                      Lương &lt; 15 tr/tháng → miễn khấu trừ TNCN
                     </td>
                   </tr>
                 )}
@@ -560,14 +561,14 @@ function OutsourcedStaffCard({
           {contractType === "ctv" ? (
             <ul className="space-y-1 text-xs text-blue-700 dark:text-blue-400">
               <li>• Ký hợp đồng dịch vụ cá nhân, nêu rõ phạm vi công việc, thời gian và đơn giá.</li>
-              <li>• Khấu trừ TNCN 10% tại nguồn nếu thu nhập ≥ 2 triệu/lần, nộp TCQ theo tháng (Điều 25 TT 111/2013).</li>
+              <li>• <strong>TNCN:</strong> Không khấu trừ nếu lương &lt; 15 triệu/tháng. Khấu trừ 10% tại nguồn nếu ≥ 15 triệu/tháng, nộp TCQ theo tháng.</li>
               <li>• Chứng từ: HĐ dịch vụ + biên bản nghiệm thu công việc + lệnh chuyển khoản.</li>
               <li>• HĐ dịch vụ cá nhân không phát sinh nghĩa vụ BHXH với bên thuê.</li>
             </ul>
           ) : (
             <ul className="space-y-1 text-xs text-blue-700 dark:text-blue-400">
               <li>• Ký hợp đồng lao động xác định thời hạn, đăng ký lao động và tham gia BHXH/BHYT/BHTN.</li>
-              <li>• Khấu trừ TNCN 10% tại nguồn đối với HĐ lao động dưới 3 tháng (Điều 25 TT 111/2013).</li>
+              <li>• <strong>TNCN:</strong> Không khấu trừ nếu lương &lt; 15 triệu/tháng. Khấu trừ 10% tại nguồn nếu ≥ 15 triệu/tháng (Điều 25 TT 111/2013).</li>
               <li>• Hồ sơ: HĐ lao động + bảng lương ký tên + biên lai đóng BHXH + chứng từ chuyển khoản.</li>
               <li>• Toàn bộ lương + BHXH phần chủ sử dụng được khấu trừ CIT (Điều 4 TT 78/2014).</li>
             </ul>
