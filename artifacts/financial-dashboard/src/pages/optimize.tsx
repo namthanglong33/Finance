@@ -224,6 +224,7 @@ function OutsourcedStaffCard({
   const [contractType, setContractType] = useState<"ctv" | "hdld">("ctv");
   const [autoFilled, setAutoFilled] = useState(false);
   const [showComprehensive, setShowComprehensive] = useState(false);
+  const [excludeInsurance, setExcludeInsurance] = useState(false);
 
 
   // PIT: 10% withheld at source when income ≥ 2M/payment (Điều 25 TT 111/2013)
@@ -260,7 +261,8 @@ function OutsourcedStaffCard({
   const insuranceAnnual = contractType === "hdld"
     ? (EMPLOYER_INS + EMPLOYEE_INS) * MIN_WAGE_BASE * 12 * numStaff
     : 0;
-  const section7RealCost = tncnAnnual + insuranceAnnual;
+  const effectiveInsurance = excludeInsurance ? 0 : insuranceAnnual;
+  const section7RealCost = tncnAnnual + effectiveInsurance;
 
   // ── 90% auto-fill từ phương án tối ưu ────────────────────────────────────
   const baseOpt = optResult?.[activeTab] ?? null;
@@ -279,22 +281,19 @@ function OutsourcedStaffCard({
     setAutoFilled(true);
   };
 
-  // ── Tổng hợp với optResult ────────────────────────────────────────────────
+  // ── Tổng hợp CT7 (chỉ chiến thuật 7, bắt đầu từ số liệu gốc) ───────────────
   const comprehensiveResult = baseOpt ? (() => {
     const taxRate = corporateTaxRate;
-    const combinedDeductible = (baseOpt.requiredAdditionalCost > 0 ? baseOpt.requiredAdditionalCost : 0) + totalDeductibleAnnual;
-    const newTaxableIncome = Math.max(0, baseOpt.currentTaxableIncome - combinedDeductible);
+    // Chỉ dùng CT7, áp vào lãi gộp ban đầu (currentTaxableIncome)
+    const newTaxableIncome = Math.max(0, baseOpt.currentTaxableIncome - totalDeductibleAnnual);
     const newCIT = newTaxableIncome * taxRate;
-    const additionalCITSaved = Math.max(0, baseOpt.afterOptimizeCorporateTax - newCIT);
-    const totalCITSaved = baseOpt.taxSaving + additionalCITSaved;
-    // Lãi ròng sau tổng hợp: không cộng gross vào chi phí thực, chỉ trừ TNCN + BH
-    const finalNetProfit = baseOpt.afterOptimizeNetProfit + additionalCITSaved - section7RealCost;
+    const ct7CITSaved = Math.max(0, baseOpt.currentCorporateTax - newCIT);
+    // Lãi ròng: bắt đầu từ lãi ròng ban đầu, cộng thuế tiết kiệm, trừ chi phí thực
+    const finalNetProfit = baseOpt.currentNetProfit + ct7CITSaved - section7RealCost;
     return {
-      combinedDeductible,
       newTaxableIncome,
       newCIT,
-      additionalCITSaved,
-      totalCITSaved,
+      ct7CITSaved,
       finalNetProfit,
       finalNetProfitMonthly: finalNetProfit / 12,
     };
@@ -576,7 +575,7 @@ function OutsourcedStaffCard({
         </div>
 
         {/* ── Nút tính tổng thể ── */}
-        {baseOpt && baseOpt.scenario !== "too_high" && (
+        {baseOpt && (
           <div className="pt-1">
             <Button
               onClick={() => setShowComprehensive(v => !v)}
@@ -584,7 +583,7 @@ function OutsourcedStaffCard({
               className="w-full border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/30"
             >
               <CheckCircle2 className="w-4 h-4 mr-2" />
-              {showComprehensive ? "Ẩn kết quả tổng thể" : "Tính kết quả tổng thể (Chiến thuật 1–6 + Chiến thuật 7)"}
+              {showComprehensive ? "Ẩn kết quả tổng thể" : "Tính kết quả tổng thể (Chiến thuật 7)"}
             </Button>
           </div>
         )}
@@ -592,22 +591,41 @@ function OutsourcedStaffCard({
         {/* ── Bảng kết quả tổng thể ── */}
         {showComprehensive && comprehensiveResult && baseOpt && (
           <div className="rounded-lg border-2 border-purple-300 dark:border-purple-700 bg-purple-50/40 dark:bg-purple-950/10 p-5 space-y-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-purple-600 shrink-0" />
-              <h3 className="text-sm font-semibold text-purple-800 dark:text-purple-300">
-                Kết quả tổng hợp — Chiến thuật 1–6 kết hợp Chiến thuật 7
-              </h3>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-purple-600 shrink-0" />
+                <h3 className="text-sm font-semibold text-purple-800 dark:text-purple-300">
+                  Kết quả — Chỉ Chiến thuật 7 (nhân sự thuê ngoài)
+                </h3>
+              </div>
+              {/* Toggle bỏ chi phí bảo hiểm */}
+              {contractType === "hdld" && (
+                <button
+                  type="button"
+                  onClick={() => setExcludeInsurance(v => !v)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                    excludeInsurance
+                      ? "bg-amber-100 dark:bg-amber-900/30 border-amber-400 text-amber-800 dark:text-amber-300"
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <span className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center ${excludeInsurance ? "bg-amber-500 border-amber-500" : "border-border"}`}>
+                    {excludeInsurance && <span className="text-white text-[9px] leading-none">✓</span>}
+                  </span>
+                  Không tính chi phí bảo hiểm (32%)
+                </button>
+              )}
             </div>
 
             {/* Chi phí thực phần 7 */}
             <div className="rounded-md border border-amber-200 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20 p-3 space-y-1.5">
               <div className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
-                Chi phí THỰC phát sinh từ Chiến thuật 7 (TNCN + Bảo hiểm)
+                Chi phí THỰC phát sinh từ Chiến thuật 7
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-amber-700 dark:text-amber-400">
                 <span>Lương gross ({numStaff} người)</span>
                 <span className="text-right font-medium text-muted-foreground italic">
-                  {formatVND(monthlyGross * 12 * numStaff)}/năm — chỉ hợp thức hóa, không vào chi phí
+                  {formatVND(monthlyGross * 12 * numStaff)}/năm — chỉ hợp thức hóa, không vào chi phí thực
                 </span>
                 {hasPIT && (
                   <>
@@ -617,20 +635,29 @@ function OutsourcedStaffCard({
                 )}
                 {contractType === "hdld" && (
                   <>
-                    <span>BHXH + BHYT + BHTN (32% lương tối thiểu vùng 6tr)</span>
-                    <span className="text-right font-semibold">{formatVND(insuranceAnnual)}/năm</span>
+                    <span className={excludeInsurance ? "line-through opacity-50" : ""}>
+                      BHXH + BHYT + BHTN (32% lương tối thiểu vùng 6tr)
+                    </span>
+                    <span className={`text-right font-semibold ${excludeInsurance ? "line-through opacity-50" : ""}`}>
+                      {formatVND(insuranceAnnual)}/năm
+                    </span>
                   </>
                 )}
                 <span className="font-bold text-amber-800 dark:text-amber-300">Tổng chi phí thực / năm</span>
-                <span className="text-right font-bold text-amber-800 dark:text-amber-300">{formatVND(section7RealCost)}</span>
+                <span className="text-right font-bold text-amber-800 dark:text-amber-300">
+                  {formatVND(section7RealCost)}
+                  {excludeInsurance && contractType === "hdld" && (
+                    <span className="ml-1 text-amber-500">(không tính BH)</span>
+                  )}
+                </span>
               </div>
             </div>
 
-            {/* Bảng đối chiếu tổng thể */}
+            {/* Bảng đối chiếu CT7 — 2 cột */}
             <Card>
               <CardHeader className="pb-2 border-b">
                 <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Bảng đối chiếu: Trước → Sau CT 1–6 → Sau CT 1–6 + CT 7
+                  Bảng đối chiếu: Trước → Sau Chiến thuật 7
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -639,45 +666,40 @@ function OutsourcedStaffCard({
                     <tr>
                       <th className="px-4 py-2 text-xs font-medium text-muted-foreground text-left">Chỉ tiêu</th>
                       <th className="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Ban đầu</th>
-                      <th className="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Sau CT 1–6</th>
-                      <th className="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Sau CT 1–6 + 7</th>
+                      <th className="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Sau CT 7</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr className="border-t border-border/40">
-                      <td className="px-4 py-2.5 font-medium">Chi phí hợp thức hóa thêm</td>
+                      <td className="px-4 py-2.5 font-medium">Chi phí lao động thuê ngoài (khấu trừ CIT)</td>
                       <td className="px-4 py-2.5 text-right text-muted-foreground">—</td>
-                      <td className="px-4 py-2.5 text-right">{formatVND(baseOpt.requiredAdditionalCost)}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-purple-700 dark:text-purple-300">{formatVND(comprehensiveResult.combinedDeductible)}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-purple-700 dark:text-purple-300">{formatVND(totalDeductibleAnnual)}</td>
                     </tr>
                     <tr className="border-t border-border/40">
                       <td className="px-4 py-2.5 font-medium">Lãi gộp chịu thuế TNDN</td>
                       <td className="px-4 py-2.5 text-right text-muted-foreground">{formatVND(baseOpt.currentTaxableIncome)}</td>
-                      <td className="px-4 py-2.5 text-right">{formatVND(baseOpt.afterOptimizeTaxableIncome)}</td>
                       <td className="px-4 py-2.5 text-right font-semibold">{formatVND(comprehensiveResult.newTaxableIncome)}</td>
                     </tr>
                     <tr className="border-t border-border/40 bg-red-50/30 dark:bg-red-950/10">
                       <td className="px-4 py-2.5 font-medium text-red-700 dark:text-red-400">Thuế TNDN phải nộp</td>
                       <td className="px-4 py-2.5 text-right text-red-600">{formatVND(baseOpt.currentCorporateTax)}</td>
-                      <td className="px-4 py-2.5 text-right text-red-600">{formatVND(baseOpt.afterOptimizeCorporateTax)}</td>
                       <td className="px-4 py-2.5 text-right font-bold text-red-600">{formatVND(comprehensiveResult.newCIT)}</td>
                     </tr>
                     <tr className="border-t border-border/40 bg-green-50/30 dark:bg-green-950/10">
                       <td className="px-4 py-2.5 font-medium text-green-700 dark:text-green-400">Thuế TNDN tiết kiệm</td>
                       <td className="px-4 py-2.5 text-right text-muted-foreground">—</td>
-                      <td className="px-4 py-2.5 text-right text-green-600">{formatVND(baseOpt.taxSaving)}</td>
-                      <td className="px-4 py-2.5 text-right font-bold text-green-600">{formatVND(comprehensiveResult.totalCITSaved)}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-green-600">{formatVND(comprehensiveResult.ct7CITSaved)}</td>
                     </tr>
                     <tr className="border-t border-border/40">
-                      <td className="px-4 py-2.5 font-medium">Chi phí thực CT 7 (TNCN + BH)</td>
-                      <td className="px-4 py-2.5 text-right text-muted-foreground">—</td>
+                      <td className="px-4 py-2.5 font-medium">
+                        Chi phí thực CT 7 (TNCN{contractType === "hdld" && !excludeInsurance ? " + BH" : ""})
+                      </td>
                       <td className="px-4 py-2.5 text-right text-muted-foreground">—</td>
                       <td className="px-4 py-2.5 text-right text-amber-600 font-semibold">({formatVND(section7RealCost)})</td>
                     </tr>
                     <tr className="border-t-2 border-border bg-muted/40">
                       <td className="px-4 py-2.5 font-bold">Lãi ròng / năm</td>
                       <td className="px-4 py-2.5 text-right font-semibold">{formatVND(baseOpt.currentNetProfit)}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-green-600">{formatVND(baseOpt.afterOptimizeNetProfit)}</td>
                       <td className={`px-4 py-2.5 text-right font-bold text-lg ${comprehensiveResult.finalNetProfit >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                         {formatVND(comprehensiveResult.finalNetProfit)}
                       </td>
@@ -685,7 +707,6 @@ function OutsourcedStaffCard({
                     <tr className="border-t border-border/40">
                       <td className="px-4 py-2.5 text-muted-foreground">Lãi ròng / tháng</td>
                       <td className="px-4 py-2.5 text-right text-muted-foreground">{formatVND(baseOpt.currentNetProfitMonthly)}</td>
-                      <td className="px-4 py-2.5 text-right">{formatVND(baseOpt.afterOptimizeNetProfitMonthly)}</td>
                       <td className="px-4 py-2.5 text-right font-semibold">{formatVND(comprehensiveResult.finalNetProfitMonthly)}</td>
                     </tr>
                   </tbody>
@@ -694,8 +715,10 @@ function OutsourcedStaffCard({
             </Card>
 
             <p className="text-xs text-muted-foreground italic">
-              * Lương gross Chiến thuật 7 ({formatVND(monthlyGross * 12 * numStaff)}/năm) chỉ dùng để hợp thức hóa giảm lãi gộp chịu thuế, không tính vào chi phí thực của doanh nghiệp.
-              Chi phí thực bao gồm: TNCN {hasPIT ? `(${formatVND(tncnAnnual)})` : "(0)"}{contractType === "hdld" ? ` + BHXH/BHYT/BHTN (${formatVND(insuranceAnnual)})` : ""}.
+              * Lương gross ({formatVND(monthlyGross * 12 * numStaff)}/năm) chỉ dùng để hợp thức hóa giảm lãi gộp chịu thuế, không tính vào chi phí thực.
+              Chi phí thực: TNCN {hasPIT ? `(${formatVND(tncnAnnual)})` : "(0)"}
+              {contractType === "hdld" && !excludeInsurance ? ` + BHXH/BHYT/BHTN (${formatVND(insuranceAnnual)})` : ""}
+              {excludeInsurance && contractType === "hdld" ? " — đã bỏ qua chi phí bảo hiểm." : "."}
             </p>
           </div>
         )}
