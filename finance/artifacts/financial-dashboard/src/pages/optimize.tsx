@@ -223,6 +223,7 @@ function OutsourcedStaffCard({
   const [monthlyGross, setMonthlyGross] = useState(10_000_000);
   const [contractType, setContractType] = useState<"ctv" | "hdld">("ctv");
   const [pitThreshold, setPitThreshold] = useState(15_000_000);
+  const [legitimizePct, setLegitimizePct] = useState(90);
   const [autoFilled, setAutoFilled] = useState(false);
   const [showComprehensive, setShowComprehensive] = useState(false);
   const [excludeInsurance, setExcludeInsurance] = useState(false);
@@ -264,10 +265,11 @@ function OutsourcedStaffCard({
   const effectiveInsurance = excludeInsurance ? 0 : insuranceAnnual;
   const section7RealCost = tncnAnnual + effectiveInsurance;
 
-  // ── 90% auto-fill từ phương án tối ưu ────────────────────────────────────
+  // ── Auto-fill từ phương án tối ưu theo % tùy chỉnh ─────────────────────
   const baseOpt = optResult?.[activeTab] ?? null;
+  const legitimizeRatio = Math.min(100, Math.max(0, legitimizePct)) / 100;
   const suggestedAnnual = baseOpt && baseOpt.scenario !== "too_high" && baseOpt.requiredAdditionalCost > 0
-    ? baseOpt.requiredAdditionalCost * 0.9
+    ? baseOpt.requiredAdditionalCost * legitimizeRatio
     : null;
 
   const handleAutoFill = () => {
@@ -330,23 +332,23 @@ function OutsourcedStaffCard({
                 <>
                   <p className="text-sm font-semibold text-green-800 dark:text-green-300 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    Đã điền tự động — 90% tổng tiền hợp thức hóa
+                    Đã điền tự động — {legitimizePct}% tổng tiền hợp thức hóa
                   </p>
                   <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">
                     Tổng quỹ lương gross mục 7:{" "}
                     <strong>{formatVND(suggestedAnnual)}/năm</strong>
                     {" "}({formatVND(suggestedAnnual / 12)}/tháng)
-                    {" "}= 90% × {formatVND(baseOpt!.requiredAdditionalCost)} cần hợp thức hóa.
+                    {" "}= {legitimizePct}% × {formatVND(baseOpt!.requiredAdditionalCost)} cần hợp thức hóa.
                     Lương gross/người/tháng đã được tính ngược từ số người hiện tại ({numStaff} người).
                   </p>
                 </>
               ) : (
                 <>
                   <p className="text-sm font-semibold text-purple-800 dark:text-purple-300">
-                    Gợi ý: Đưa 90% tổng tiền cần hợp thức hóa vào Mục 7
+                    Gợi ý: Đưa {legitimizePct}% tổng tiền cần hợp thức hóa vào Mục 7
                   </p>
                   <p className="text-xs text-purple-700 dark:text-purple-400 mt-0.5">
-                    90% × {formatVND(baseOpt!.requiredAdditionalCost)} ={" "}
+                    {legitimizePct}% × {formatVND(baseOpt!.requiredAdditionalCost)} ={" "}
                     <strong>{formatVND(suggestedAnnual)}/năm</strong>
                     {" "}({formatVND(suggestedAnnual / 12)}/tháng)
                     sẽ được phân bổ làm quỹ lương gross cho {numStaff} nhân sự thuê ngoài.
@@ -380,7 +382,7 @@ function OutsourcedStaffCard({
         )}
 
         {/* Inputs */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
           <div className="space-y-1.5">
             <Label className="text-xs">Số lượng (người)</Label>
             <Input
@@ -403,6 +405,20 @@ function OutsourcedStaffCard({
             />
             <p className="text-[10px] text-muted-foreground leading-tight">
               Lương &lt; ngưỡng này → miễn TNCN 10%
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">% đưa vào Mục 7 (mặc định 90%)</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number" step={1} min={1} max={100} value={legitimizePct}
+                onChange={e => { setLegitimizePct(Math.min(100, Math.max(1, Number(e.target.value)))); setAutoFilled(false); }}
+                className="w-full"
+              />
+              <span className="text-sm text-muted-foreground shrink-0">%</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground leading-tight">
+              % tổng tiền cần hợp thức hóa phân bổ vào CT7
             </p>
           </div>
           <div className="space-y-1.5">
@@ -556,7 +572,7 @@ function OutsourcedStaffCard({
             </div>
             {suggestedAnnual !== null && totalDeductibleAnnual > suggestedAnnual && (
               <div className="text-[10px] text-red-500 mt-1 font-medium">
-                ⚠ Vượt 90% mục tiêu hợp thức hóa
+                ⚠ Vượt {legitimizePct}% mục tiêu hợp thức hóa
               </div>
             )}
           </div>
@@ -581,11 +597,11 @@ function OutsourcedStaffCard({
             <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <p className="text-sm font-semibold text-red-800 dark:text-red-300">
-                Tổng khấu trừ CT7 vượt quá 90% số tiền cần hợp thức hóa
+                Tổng khấu trừ CT7 vượt quá {legitimizePct}% số tiền cần hợp thức hóa
               </p>
               <p className="text-xs text-red-700 dark:text-red-400">
                 Khấu trừ hiện tại: <strong>{formatVND(totalDeductibleAnnual)}/năm</strong>
-                {" "}— Giới hạn 90%: <strong>{formatVND(suggestedAnnual)}/năm</strong>
+                {" "}— Giới hạn {legitimizePct}%: <strong>{formatVND(suggestedAnnual)}/năm</strong>
                 {" "}— Vượt: <strong>{formatVND(totalDeductibleAnnual - suggestedAnnual)}</strong>.
               </p>
               <p className="text-xs text-red-700 dark:text-red-400">
