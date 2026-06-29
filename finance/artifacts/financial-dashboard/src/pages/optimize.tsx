@@ -767,7 +767,7 @@ function OutsourcedStaffCard({
                 </span>
                 {hasPIT && (
                   <>
-                    <span>Khấu trừ TNCN 10%</span>
+                    <span>Thuế TNCN lũy tiến ({pitBracket})</span>
                     <span className="text-right font-semibold">{formatVND(tncnAnnual)}/năm</span>
                   </>
                 )}
