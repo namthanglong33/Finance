@@ -219,23 +219,47 @@ function OutsourcedStaffCard({
   optResult: { type1: OptimizeContractResult; type2: OptimizeContractResult } | null;
   activeTab: "type1" | "type2";
 }) {
-  const LS_KEY = "ct7_config_v1";
+  const LS_KEY = "ct7_config_v2";
   const savedConfig = (() => { try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch { return {}; } })();
 
-  const [numStaff, setNumStaff] = useState<number>(savedConfig.numStaff ?? 1);
-  const [monthlyGross, setMonthlyGross] = useState<number>(savedConfig.monthlyGross ?? 10_000_000);
-  const [contractType, setContractType] = useState<"ctv" | "hdld">(savedConfig.contractType ?? "ctv");
+  // ── Tab state (mỗi loại hợp đồng có cấu hình riêng) ──────────────────────
+  const [activeContractTab, setActiveContractTab] = useState<"ctv" | "hdld">(savedConfig.activeContractTab ?? "ctv");
+
+  const [ctvNumStaff, setCtvNumStaff] = useState<number>(savedConfig.ctvNumStaff ?? 1);
+  const [ctvMonthlyGross, setCtvMonthlyGross] = useState<number>(savedConfig.ctvMonthlyGross ?? 10_000_000);
+  const [ctvAutoFilled, setCtvAutoFilled] = useState(false);
+
+  const [hdldNumStaff, setHdldNumStaff] = useState<number>(savedConfig.hdldNumStaff ?? 1);
+  const [hdldMonthlyGross, setHdldMonthlyGross] = useState<number>(savedConfig.hdldMonthlyGross ?? 10_000_000);
+  const [hdldAutoFilled, setHdldAutoFilled] = useState(false);
+  const [hdldExcludeInsurance, setHdldExcludeInsurance] = useState<boolean>(savedConfig.hdldExcludeInsurance ?? false);
+
+  // ── Shared config ─────────────────────────────────────────────────────────
   const [pitThreshold, setPitThreshold] = useState<number>(savedConfig.pitThreshold ?? 15_000_000);
   const [legitimizePct, setLegitimizePct] = useState<number>(savedConfig.legitimizePct ?? 90);
-  const [autoFilled, setAutoFilled] = useState(false);
   const [showComprehensive, setShowComprehensive] = useState(false);
-  const [excludeInsurance, setExcludeInsurance] = useState(false);
+
+  // ── Active tab derived values (proxy) ─────────────────────────────────────
+  const contractType = activeContractTab;
+  const numStaff = activeContractTab === "ctv" ? ctvNumStaff : hdldNumStaff;
+  const monthlyGross = activeContractTab === "ctv" ? ctvMonthlyGross : hdldMonthlyGross;
+  const autoFilled = activeContractTab === "ctv" ? ctvAutoFilled : hdldAutoFilled;
+  const excludeInsurance = activeContractTab === "hdld" ? hdldExcludeInsurance : false;
+
+  const setNumStaff = (v: number) => activeContractTab === "ctv" ? setCtvNumStaff(v) : setHdldNumStaff(v);
+  const setMonthlyGross = (v: number) => activeContractTab === "ctv" ? setCtvMonthlyGross(v) : setHdldMonthlyGross(v);
+  const setAutoFilled = (v: boolean) => activeContractTab === "ctv" ? setCtvAutoFilled(v) : setHdldAutoFilled(v);
+  const setExcludeInsurance = (v: boolean) => setHdldExcludeInsurance(v);
 
   useEffect(() => {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ numStaff, monthlyGross, contractType, pitThreshold, legitimizePct }));
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        activeContractTab, pitThreshold, legitimizePct,
+        ctvNumStaff, ctvMonthlyGross,
+        hdldNumStaff, hdldMonthlyGross, hdldExcludeInsurance,
+      }));
     } catch {}
-  }, [numStaff, monthlyGross, contractType, pitThreshold, legitimizePct]);
+  }, [activeContractTab, pitThreshold, legitimizePct, ctvNumStaff, ctvMonthlyGross, hdldNumStaff, hdldMonthlyGross, hdldExcludeInsurance]);
 
   // PIT: 10% khấu trừ tại nguồn khi thu nhập ≥ ngưỡng TNCN (mặc định 15 triệu/tháng)
   const hasPIT = monthlyGross >= pitThreshold;
@@ -327,9 +351,30 @@ function OutsourcedStaffCard({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="pt-5 space-y-5">
+      <CardContent className="pt-0 space-y-5">
 
-        {/* ── Banner 90% tự động ── */}
+        {/* ── Tab chọn loại hợp đồng ── */}
+        <div className="flex border-b border-border -mx-6 px-6">
+          {([
+            { val: "ctv" as const, label: "HĐ dịch vụ / CTV", desc: "Không BHXH" },
+            { val: "hdld" as const, label: "HĐ lao động", desc: "Có BHXH/BHYT/BHTN" },
+          ]).map(tab => (
+            <button
+              key={tab.val}
+              onClick={() => setActiveContractTab(tab.val)}
+              className={`flex flex-col items-start px-5 py-3.5 text-left border-b-2 transition-colors mr-1 ${
+                activeContractTab === tab.val
+                  ? "border-purple-600 text-purple-700 dark:text-purple-300 bg-purple-50/50 dark:bg-purple-950/20"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+              }`}
+            >
+              <span className={`text-sm font-semibold ${activeContractTab === tab.val ? "" : ""}`}>{tab.label}</span>
+              <span className="text-[10px] mt-0.5">{tab.desc}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* ── Banner tự động ── */}
         {suggestedAnnual !== null && (
           <div className={`rounded-lg border p-4 flex flex-col sm:flex-row sm:items-center gap-3 ${
             autoFilled
@@ -392,7 +437,7 @@ function OutsourcedStaffCard({
 
         {/* Inputs — hàng 1: thông số vận hành */}
         <div className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Số lượng nhân sự (người)</Label>
               <Input
@@ -406,27 +451,6 @@ function OutsourcedStaffCard({
                 type="number" step={1_000_000} value={monthlyGross}
                 onChange={e => setMonthlyGross(Number(e.target.value))}
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Loại hợp đồng</Label>
-              <div className="flex gap-2 h-10">
-                {([
-                  { val: "ctv" as const, label: "HĐ dịch vụ / CTV" },
-                  { val: "hdld" as const, label: "HĐ lao động + BH" },
-                ]).map(opt => (
-                  <button
-                    key={opt.val}
-                    onClick={() => { setContractType(opt.val); setAutoFilled(false); }}
-                    className={`flex-1 rounded border text-xs font-medium transition-colors ${
-                      contractType === opt.val
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "border-border text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
 
