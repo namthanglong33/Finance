@@ -222,14 +222,13 @@ function OutsourcedStaffCard({
   const [numStaff, setNumStaff] = useState(1);
   const [monthlyGross, setMonthlyGross] = useState(10_000_000);
   const [contractType, setContractType] = useState<"ctv" | "hdld">("ctv");
+  const [pitThreshold, setPitThreshold] = useState(15_000_000);
   const [autoFilled, setAutoFilled] = useState(false);
   const [showComprehensive, setShowComprehensive] = useState(false);
   const [excludeInsurance, setExcludeInsurance] = useState(false);
 
-
-  // PIT: 10% khấu trừ tại nguồn khi thu nhập ≥ 15 triệu/tháng
-  const PIT_THRESHOLD = 15_000_000;
-  const hasPIT = monthlyGross >= PIT_THRESHOLD;
+  // PIT: 10% khấu trừ tại nguồn khi thu nhập ≥ ngưỡng TNCN (mặc định 15 triệu/tháng)
+  const hasPIT = monthlyGross >= pitThreshold;
   const pitPerMonth = hasPIT ? monthlyGross * 0.10 : 0;
   const pitAnnual = pitPerMonth * 12;
 
@@ -381,7 +380,7 @@ function OutsourcedStaffCard({
         )}
 
         {/* Inputs */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div className="space-y-1.5">
             <Label className="text-xs">Số lượng (người)</Label>
             <Input
@@ -395,6 +394,16 @@ function OutsourcedStaffCard({
               type="number" step={1_000_000} value={monthlyGross}
               onChange={e => setMonthlyGross(Number(e.target.value))}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Ngưỡng miễn TNCN / tháng (VNĐ)</Label>
+            <Input
+              type="number" step={1_000_000} min={0} value={pitThreshold}
+              onChange={e => setPitThreshold(Number(e.target.value))}
+            />
+            <p className="text-[10px] text-muted-foreground leading-tight">
+              Lương &lt; ngưỡng này → miễn TNCN 10%
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Loại hợp đồng</Label>
@@ -561,14 +570,14 @@ function OutsourcedStaffCard({
           {contractType === "ctv" ? (
             <ul className="space-y-1 text-xs text-blue-700 dark:text-blue-400">
               <li>• Ký hợp đồng dịch vụ cá nhân, nêu rõ phạm vi công việc, thời gian và đơn giá.</li>
-              <li>• <strong>TNCN:</strong> Không khấu trừ nếu lương &lt; 15 triệu/tháng. Khấu trừ 10% tại nguồn nếu ≥ 15 triệu/tháng, nộp TCQ theo tháng.</li>
+              <li>• <strong>TNCN:</strong> Không khấu trừ nếu lương &lt; {formatVND(pitThreshold)}/tháng. Khấu trừ 10% tại nguồn nếu ≥ {formatVND(pitThreshold)}/tháng, nộp TCQ theo tháng.</li>
               <li>• Chứng từ: HĐ dịch vụ + biên bản nghiệm thu công việc + lệnh chuyển khoản.</li>
               <li>• HĐ dịch vụ cá nhân không phát sinh nghĩa vụ BHXH với bên thuê.</li>
             </ul>
           ) : (
             <ul className="space-y-1 text-xs text-blue-700 dark:text-blue-400">
               <li>• Ký hợp đồng lao động xác định thời hạn, đăng ký lao động và tham gia BHXH/BHYT/BHTN.</li>
-              <li>• <strong>TNCN:</strong> Không khấu trừ nếu lương &lt; 15 triệu/tháng. Khấu trừ 10% tại nguồn nếu ≥ 15 triệu/tháng (Điều 25 TT 111/2013).</li>
+              <li>• <strong>TNCN:</strong> Không khấu trừ nếu lương &lt; {formatVND(pitThreshold)}/tháng. Khấu trừ 10% tại nguồn nếu ≥ {formatVND(pitThreshold)}/tháng (Điều 25 TT 111/2013).</li>
               <li>• Hồ sơ: HĐ lao động + bảng lương ký tên + biên lai đóng BHXH + chứng từ chuyển khoản.</li>
               <li>• Toàn bộ lương + BHXH phần chủ sử dụng được khấu trừ CIT (Điều 4 TT 78/2014).</li>
             </ul>
