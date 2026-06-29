@@ -539,13 +539,26 @@ function OutsourcedStaffCard({
 
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="rounded-lg border border-border bg-muted/30 p-4 text-center">
+          <div className={`rounded-lg border p-4 text-center ${
+            suggestedAnnual !== null && totalDeductibleAnnual > suggestedAnnual
+              ? "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/20"
+              : "border-border bg-muted/30"
+          }`}>
             <div className="text-xs text-muted-foreground mb-1">
               Tổng khấu trừ CIT / năm ({numStaff} người)
             </div>
-            <div className="text-lg font-bold text-purple-700 dark:text-purple-300">
+            <div className={`text-lg font-bold ${
+              suggestedAnnual !== null && totalDeductibleAnnual > suggestedAnnual
+                ? "text-red-600 dark:text-red-400"
+                : "text-purple-700 dark:text-purple-300"
+            }`}>
               {formatVND(totalDeductibleAnnual)}
             </div>
+            {suggestedAnnual !== null && totalDeductibleAnnual > suggestedAnnual && (
+              <div className="text-[10px] text-red-500 mt-1 font-medium">
+                ⚠ Vượt 90% mục tiêu hợp thức hóa
+              </div>
+            )}
           </div>
           <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-4 text-center">
             <div className="text-xs text-muted-foreground mb-1">
@@ -561,6 +574,26 @@ function OutsourcedStaffCard({
             <div className="text-xs text-muted-foreground">({formatVND(netCostAfterTax / 12)}/tháng)</div>
           </div>
         </div>
+
+        {/* Cảnh báo vượt 90% mục tiêu */}
+        {suggestedAnnual !== null && totalDeductibleAnnual > suggestedAnnual && (
+          <div className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/20 p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+                Tổng khấu trừ CT7 vượt quá 90% số tiền cần hợp thức hóa
+              </p>
+              <p className="text-xs text-red-700 dark:text-red-400">
+                Khấu trừ hiện tại: <strong>{formatVND(totalDeductibleAnnual)}/năm</strong>
+                {" "}— Giới hạn 90%: <strong>{formatVND(suggestedAnnual)}/năm</strong>
+                {" "}— Vượt: <strong>{formatVND(totalDeductibleAnnual - suggestedAnnual)}</strong>.
+              </p>
+              <p className="text-xs text-red-700 dark:text-red-400">
+                👉 Giảm số lượng nhân sự hoặc lương gross để không chi quá mức cần thiết cho hợp thức hóa.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Legal requirements */}
         <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-3 space-y-2">
