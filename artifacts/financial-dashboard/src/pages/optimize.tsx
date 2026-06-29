@@ -209,6 +209,42 @@ function ContractOptimizeResult({ d, label }: { d: OptimizeContractResult; label
   );
 }
 
+// ── Biểu thuế TNCN lũy tiến 2026 (từ 1/1/2026) ──────────────────────────────
+// Nguồn: Luật thuế TNCN sửa đổi 2026
+const PIT_BRACKETS_2026 = [
+  { limit: 10_000_000,  rate: 0.05 },  // Bậc 1: đến 10 tr/tháng → 5%
+  { limit: 30_000_000,  rate: 0.10 },  // Bậc 2: 10–30 tr/tháng  → 10%
+  { limit: 60_000_000,  rate: 0.20 },  // Bậc 3: 30–60 tr/tháng  → 20%
+  { limit: 100_000_000, rate: 0.30 },  // Bậc 4: 60–100 tr/tháng → 30%
+  { limit: Infinity,    rate: 0.35 },  // Bậc 5: trên 100 tr     → 35%
+];
+
+/** Tính thuế TNCN lũy tiến từ thu nhập tính thuế/tháng */
+function calcProgressivePIT(taxableMonthly: number): number {
+  if (taxableMonthly <= 0) return 0;
+  let tax = 0;
+  let prev = 0;
+  for (const { limit, rate } of PIT_BRACKETS_2026) {
+    const slice = Math.min(taxableMonthly, limit) - prev;
+    if (slice <= 0) break;
+    tax += slice * rate;
+    prev = limit;
+    if (taxableMonthly <= limit) break;
+  }
+  return Math.round(tax);
+}
+
+/** Xác định bậc thuế hiện tại của thu nhập tính thuế/tháng */
+function pitBracketLabel(taxableMonthly: number): string {
+  let prev = 0;
+  for (let i = 0; i < PIT_BRACKETS_2026.length; i++) {
+    const { limit } = PIT_BRACKETS_2026[i];
+    if (taxableMonthly <= limit) return `Bậc ${i + 1} (${(PIT_BRACKETS_2026[i].rate * 100).toFixed(0)}%)`;
+    prev = limit;
+  }
+  return `Bậc 5 (35%)`;
+}
+
 // ── Chiến thuật 7: Outsourced staff CIT calculator ───────────────────────────
 function OutsourcedStaffCard({
   corporateTaxRate,
@@ -261,10 +297,13 @@ function OutsourcedStaffCard({
     } catch {}
   }, [activeContractTab, pitThreshold, legitimizePct, ctvNumStaff, ctvMonthlyGross, hdldNumStaff, hdldMonthlyGross, hdldExcludeInsurance]);
 
-  // PIT: 10% khấu trừ tại nguồn khi thu nhập ≥ ngưỡng TNCN (mặc định 15 triệu/tháng)
-  const hasPIT = monthlyGross >= pitThreshold;
-  const pitPerMonth = hasPIT ? monthlyGross * 0.10 : 0;
+  // PIT lũy tiến 2026: Thu nhập tính thuế = Gross − giảm trừ gia cảnh (pitThreshold)
+  const taxableIncomeMonthly = Math.max(0, monthlyGross - pitThreshold);
+  const pitPerMonth = calcProgressivePIT(taxableIncomeMonthly);
   const pitAnnual = pitPerMonth * 12;
+  const hasPIT = pitPerMonth > 0;
+  const pitEffectiveRate = monthlyGross > 0 ? pitPerMonth / monthlyGross : 0;
+  const pitBracket = pitBracketLabel(taxableIncomeMonthly);
 
   // Employer insurance (HĐ lao động only): BHXH 17.5% + BHYT 3% + BHTN 1% = 21.5%
   const EMPLOYER_INS = 0.215;
@@ -461,12 +500,12 @@ function OutsourcedStaffCard({
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Ngưỡng miễn TNCN / tháng (VNĐ)</Label>
+                <Label className="text-xs font-medium">Giảm trừ gia cảnh / tháng (VNĐ)</Label>
                 <Input
                   type="number" step={1_000_000} min={0} value={pitThreshold}
                   onChange={e => setPitThreshold(Number(e.target.value))}
                 />
-                <p className="text-[10px] text-muted-foreground">Lương &lt; ngưỡng này → miễn khấu trừ TNCN 10%</p>
+                <p className="text-[10px] text-muted-foreground">TN tính thuế = Gross − giảm trừ. Mặc định 15 tr (độc thân)</p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">% tổng tiền hợp thức hóa đưa vào Mục 7</Label>
@@ -512,7 +551,7 @@ function OutsourcedStaffCard({
                 {hasPIT ? (
                   <tr className="border-t border-border/40 bg-amber-50/50 dark:bg-amber-950/10">
                     <td className="px-4 py-2.5 font-medium text-amber-800 dark:text-amber-300">
-                      Khấu trừ TNCN 10% (lương ≥ 15 triệu/tháng)
+                      Thuế TNCN lũy tiến — {pitBracket}
                     </td>
                     <td className="px-4 py-2.5 text-right text-amber-700 dark:text-amber-400">
                       ({formatVND(pitPerMonth)})
@@ -521,16 +560,16 @@ function OutsourcedStaffCard({
                       ({formatVND(pitAnnual)})
                     </td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground hidden sm:table-cell">
-                      Trừ từ lương NV → nộp TCQ. Đ.25 TT 111/2013
+                      TN tính thuế = {formatVND(taxableIncomeMonthly)}/th · Thuế hiệu dụng {(pitEffectiveRate * 100).toFixed(1)}%
                     </td>
                   </tr>
                 ) : (
                   <tr className="border-t border-border/40">
-                    <td className="px-4 py-2.5 text-muted-foreground">TNCN</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">Thuế TNCN</td>
                     <td className="px-4 py-2.5 text-right text-muted-foreground">—</td>
                     <td className="px-4 py-2.5 text-right text-muted-foreground">—</td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground hidden sm:table-cell">
-                      Lương &lt; 15 tr/tháng → miễn khấu trừ TNCN
+                      Gross − giảm trừ = {formatVND(taxableIncomeMonthly)} → TN tính thuế = 0, miễn TNCN
                     </td>
                   </tr>
                 )}
@@ -659,14 +698,14 @@ function OutsourcedStaffCard({
           {contractType === "ctv" ? (
             <ul className="space-y-1 text-xs text-blue-700 dark:text-blue-400">
               <li>• Ký hợp đồng dịch vụ cá nhân, nêu rõ phạm vi công việc, thời gian và đơn giá.</li>
-              <li>• <strong>TNCN:</strong> Không khấu trừ nếu lương &lt; {formatVND(pitThreshold)}/tháng. Khấu trừ 10% tại nguồn nếu ≥ {formatVND(pitThreshold)}/tháng, nộp TCQ theo tháng.</li>
+              <li>• <strong>TNCN lũy tiến 2026:</strong> TN tính thuế = Gross − giảm trừ {formatVND(pitThreshold)}/tháng. Thuế tính theo bậc 5–35%. Công ty khấu trừ tại nguồn và nộp thay hàng tháng.</li>
               <li>• Chứng từ: HĐ dịch vụ + biên bản nghiệm thu công việc + lệnh chuyển khoản.</li>
               <li>• HĐ dịch vụ cá nhân không phát sinh nghĩa vụ BHXH với bên thuê.</li>
             </ul>
           ) : (
             <ul className="space-y-1 text-xs text-blue-700 dark:text-blue-400">
               <li>• Ký hợp đồng lao động xác định thời hạn, đăng ký lao động và tham gia BHXH/BHYT/BHTN.</li>
-              <li>• <strong>TNCN:</strong> Không khấu trừ nếu lương &lt; {formatVND(pitThreshold)}/tháng. Khấu trừ 10% tại nguồn nếu ≥ {formatVND(pitThreshold)}/tháng (Điều 25 TT 111/2013).</li>
+              <li>• <strong>TNCN lũy tiến 2026:</strong> TN tính thuế = Gross − giảm trừ {formatVND(pitThreshold)}/tháng. Thuế tính theo bậc 5–35% (Luật TNCN sửa đổi 2026). Công ty khấu trừ tại nguồn và nộp thay.</li>
               <li>• Hồ sơ: HĐ lao động + bảng lương ký tên + biên lai đóng BHXH + chứng từ chuyển khoản.</li>
               <li>• Toàn bộ lương + BHXH phần chủ sử dụng được khấu trừ CIT (Điều 4 TT 78/2014).</li>
             </ul>
