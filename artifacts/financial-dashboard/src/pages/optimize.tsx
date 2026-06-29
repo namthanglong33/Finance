@@ -7,9 +7,9 @@ import { useOptimize } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Loader2, TrendingDown, CheckCircle2, AlertTriangle,
-  ShieldCheck, UserPlus,
+  ShieldCheck, UserPlus, Settings,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatVND, formatPercent } from "@/lib/utils";
 import type { CostAllocation, OptimizeContractResult } from "@workspace/api-client-react";
 import { Link } from "wouter";
@@ -219,14 +219,23 @@ function OutsourcedStaffCard({
   optResult: { type1: OptimizeContractResult; type2: OptimizeContractResult } | null;
   activeTab: "type1" | "type2";
 }) {
-  const [numStaff, setNumStaff] = useState(1);
-  const [monthlyGross, setMonthlyGross] = useState(10_000_000);
-  const [contractType, setContractType] = useState<"ctv" | "hdld">("ctv");
-  const [pitThreshold, setPitThreshold] = useState(15_000_000);
-  const [legitimizePct, setLegitimizePct] = useState(90);
+  const LS_KEY = "ct7_config_v1";
+  const savedConfig = (() => { try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch { return {}; } })();
+
+  const [numStaff, setNumStaff] = useState<number>(savedConfig.numStaff ?? 1);
+  const [monthlyGross, setMonthlyGross] = useState<number>(savedConfig.monthlyGross ?? 10_000_000);
+  const [contractType, setContractType] = useState<"ctv" | "hdld">(savedConfig.contractType ?? "ctv");
+  const [pitThreshold, setPitThreshold] = useState<number>(savedConfig.pitThreshold ?? 15_000_000);
+  const [legitimizePct, setLegitimizePct] = useState<number>(savedConfig.legitimizePct ?? 90);
   const [autoFilled, setAutoFilled] = useState(false);
   const [showComprehensive, setShowComprehensive] = useState(false);
   const [excludeInsurance, setExcludeInsurance] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({ numStaff, monthlyGross, contractType, pitThreshold, legitimizePct }));
+    } catch {}
+  }, [numStaff, monthlyGross, contractType, pitThreshold, legitimizePct]);
 
   // PIT: 10% khấu trừ tại nguồn khi thu nhập ≥ ngưỡng TNCN (mặc định 15 triệu/tháng)
   const hasPIT = monthlyGross >= pitThreshold;
@@ -381,65 +390,72 @@ function OutsourcedStaffCard({
           </div>
         )}
 
-        {/* Inputs */}
-        <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Số lượng (người)</Label>
-            <Input
-              type="number" min={1} value={numStaff}
-              onChange={e => { setNumStaff(Math.max(1, Number(e.target.value))); setAutoFilled(false); }}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Lương gross / người / tháng (VNĐ)</Label>
-            <Input
-              type="number" step={1_000_000} value={monthlyGross}
-              onChange={e => setMonthlyGross(Number(e.target.value))}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Ngưỡng miễn TNCN / tháng (VNĐ)</Label>
-            <Input
-              type="number" step={1_000_000} min={0} value={pitThreshold}
-              onChange={e => setPitThreshold(Number(e.target.value))}
-            />
-            <p className="text-[10px] text-muted-foreground leading-tight">
-              Lương &lt; ngưỡng này → miễn TNCN 10%
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">% đưa vào Mục 7 (mặc định 90%)</Label>
-            <div className="flex items-center gap-2">
+        {/* Inputs — hàng 1: thông số vận hành */}
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Số lượng nhân sự (người)</Label>
               <Input
-                type="number" step={1} min={1} max={100} value={legitimizePct}
-                onChange={e => { setLegitimizePct(Math.min(100, Math.max(1, Number(e.target.value)))); setAutoFilled(false); }}
-                className="w-full"
+                type="number" min={1} value={numStaff}
+                onChange={e => { setNumStaff(Math.max(1, Number(e.target.value))); setAutoFilled(false); }}
               />
-              <span className="text-sm text-muted-foreground shrink-0">%</span>
             </div>
-            <p className="text-[10px] text-muted-foreground leading-tight">
-              % tổng tiền cần hợp thức hóa phân bổ vào CT7
-            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Lương gross / người / tháng (VNĐ)</Label>
+              <Input
+                type="number" step={1_000_000} value={monthlyGross}
+                onChange={e => setMonthlyGross(Number(e.target.value))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Loại hợp đồng</Label>
+              <div className="flex gap-2 h-10">
+                {([
+                  { val: "ctv" as const, label: "HĐ dịch vụ / CTV" },
+                  { val: "hdld" as const, label: "HĐ lao động + BH" },
+                ]).map(opt => (
+                  <button
+                    key={opt.val}
+                    onClick={() => { setContractType(opt.val); setAutoFilled(false); }}
+                    className={`flex-1 rounded border text-xs font-medium transition-colors ${
+                      contractType === opt.val
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "border-border text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Loại hợp đồng</Label>
-            <div className="flex gap-2 h-10">
-              {([
-                { val: "ctv" as const, label: "HĐ dịch vụ / CTV" },
-                { val: "hdld" as const, label: "HĐ lao động + BH" },
-              ]).map(opt => (
-                <button
-                  key={opt.val}
-                  onClick={() => { setContractType(opt.val); setAutoFilled(false); }}
-                  className={`flex-1 rounded border text-xs font-medium transition-colors ${
-                    contractType === opt.val
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "border-border text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+
+          {/* Hàng 2: cấu hình ngưỡng — nền muted để phân biệt với inputs chính */}
+          <div className="rounded-md border border-border bg-muted/30 px-4 py-3">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
+              <Settings className="w-3 h-3" /> Cấu hình ngưỡng (lưu tự động)
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Ngưỡng miễn TNCN / tháng (VNĐ)</Label>
+                <Input
+                  type="number" step={1_000_000} min={0} value={pitThreshold}
+                  onChange={e => setPitThreshold(Number(e.target.value))}
+                />
+                <p className="text-[10px] text-muted-foreground">Lương &lt; ngưỡng này → miễn khấu trừ TNCN 10%</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">% tổng tiền hợp thức hóa đưa vào Mục 7</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number" step={1} min={1} max={100} value={legitimizePct}
+                    onChange={e => { setLegitimizePct(Math.min(100, Math.max(1, Number(e.target.value)))); setAutoFilled(false); }}
+                    className="flex-1"
+                  />
+                  <span className="text-sm font-semibold text-muted-foreground w-6 text-center">%</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground">Mặc định 90% — cảnh báo nếu CT7 vượt ngưỡng này</p>
+              </div>
             </div>
           </div>
         </div>
