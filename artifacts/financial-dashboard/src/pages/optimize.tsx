@@ -222,7 +222,9 @@ function OutsourcedStaffCard({
   const [numStaff, setNumStaff] = useState(1);
   const [monthlyGross, setMonthlyGross] = useState(10_000_000);
   const [contractType, setContractType] = useState<"ctv" | "hdld">("ctv");
+  const [autoFilled, setAutoFilled] = useState(false);
   const [showComprehensive, setShowComprehensive] = useState(false);
+
 
   // PIT: 10% withheld at source when income ≥ 2M/payment (Điều 25 TT 111/2013)
   const hasPIT = monthlyGross >= 2_000_000;
@@ -260,8 +262,24 @@ function OutsourcedStaffCard({
     : 0;
   const section7RealCost = tncnAnnual + insuranceAnnual;
 
-  // ── Tổng hợp với optResult ────────────────────────────────────────────────
+  // ── 90% auto-fill từ phương án tối ưu ────────────────────────────────────
   const baseOpt = optResult?.[activeTab] ?? null;
+  const suggestedAnnual = baseOpt && baseOpt.scenario !== "too_high" && baseOpt.requiredAdditionalCost > 0
+    ? baseOpt.requiredAdditionalCost * 0.9
+    : null;
+
+  const handleAutoFill = () => {
+    if (!suggestedAnnual || numStaff < 1) return;
+    // totalDeductibleAnnual = companyCostPerMonth * 12 * numStaff
+    // CTV:  companyCostPerMonth = monthlyGross
+    // HDLD: companyCostPerMonth = monthlyGross + employerInsPerMonth
+    const employerIns = contractType === "hdld" ? MIN_WAGE_BASE * EMPLOYER_INS : 0;
+    const grossPerPersonMonth = Math.round((suggestedAnnual / numStaff / 12) - employerIns);
+    setMonthlyGross(Math.max(grossPerPersonMonth, 1_000_000));
+    setAutoFilled(true);
+  };
+
+  // ── Tổng hợp với optResult ────────────────────────────────────────────────
   const comprehensiveResult = baseOpt ? (() => {
     const taxRate = corporateTaxRate;
     const combinedDeductible = (baseOpt.requiredAdditionalCost > 0 ? baseOpt.requiredAdditionalCost : 0) + totalDeductibleAnnual;
@@ -301,13 +319,74 @@ function OutsourcedStaffCard({
       </CardHeader>
       <CardContent className="pt-5 space-y-5">
 
+        {/* ── Banner 90% tự động ── */}
+        {suggestedAnnual !== null && (
+          <div className={`rounded-lg border p-4 flex flex-col sm:flex-row sm:items-center gap-3 ${
+            autoFilled
+              ? "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20"
+              : "border-purple-200 dark:border-purple-700 bg-purple-50/50 dark:bg-purple-950/20"
+          }`}>
+            <div className="flex-1 min-w-0">
+              {autoFilled ? (
+                <>
+                  <p className="text-sm font-semibold text-green-800 dark:text-green-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    Đã điền tự động — 90% tổng tiền hợp thức hóa
+                  </p>
+                  <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">
+                    Tổng quỹ lương gross mục 7:{" "}
+                    <strong>{formatVND(suggestedAnnual)}/năm</strong>
+                    {" "}({formatVND(suggestedAnnual / 12)}/tháng)
+                    {" "}= 90% × {formatVND(baseOpt!.requiredAdditionalCost)} cần hợp thức hóa.
+                    Lương gross/người/tháng đã được tính ngược từ số người hiện tại ({numStaff} người).
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-purple-800 dark:text-purple-300">
+                    Gợi ý: Đưa 90% tổng tiền cần hợp thức hóa vào Mục 7
+                  </p>
+                  <p className="text-xs text-purple-700 dark:text-purple-400 mt-0.5">
+                    90% × {formatVND(baseOpt!.requiredAdditionalCost)} ={" "}
+                    <strong>{formatVND(suggestedAnnual)}/năm</strong>
+                    {" "}({formatVND(suggestedAnnual / 12)}/tháng)
+                    sẽ được phân bổ làm quỹ lương gross cho {numStaff} nhân sự thuê ngoài.
+                  </p>
+                </>
+              )}
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button
+                size="sm"
+                variant={autoFilled ? "outline" : "default"}
+                className={autoFilled ? "" : "bg-purple-600 hover:bg-purple-700 text-white border-purple-600"}
+                onClick={handleAutoFill}
+              >
+                {autoFilled ? "Tính lại" : "Điền tự động"}
+              </Button>
+              {autoFilled && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setMonthlyGross(10_000_000);
+                    setAutoFilled(false);
+                  }}
+                >
+                  Đặt lại
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Inputs */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="space-y-1.5">
             <Label className="text-xs">Số lượng (người)</Label>
             <Input
               type="number" min={1} value={numStaff}
-              onChange={e => setNumStaff(Math.max(1, Number(e.target.value)))}
+              onChange={e => { setNumStaff(Math.max(1, Number(e.target.value))); setAutoFilled(false); }}
             />
           </div>
           <div className="space-y-1.5">
@@ -326,7 +405,7 @@ function OutsourcedStaffCard({
               ]).map(opt => (
                 <button
                   key={opt.val}
-                  onClick={() => setContractType(opt.val)}
+                  onClick={() => { setContractType(opt.val); setAutoFilled(false); }}
                   className={`flex-1 rounded border text-xs font-medium transition-colors ${
                     contractType === opt.val
                       ? "bg-primary text-primary-foreground border-primary"
