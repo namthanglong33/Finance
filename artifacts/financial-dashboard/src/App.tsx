@@ -9,6 +9,8 @@ import InputPage from "./pages/input";
 import ResultsPage from "./pages/results";
 import OptimizePage from "./pages/optimize";
 import CalculationPage from "./pages/calculation";
+import ContractsPage from "./pages/contracts";
+import OptimizedResultsPage from "./pages/optimized-results";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -28,7 +30,9 @@ function Router() {
         <Route path="/input" component={InputPage} />
         <Route path="/results" component={ResultsPage} />
         <Route path="/optimize" component={OptimizePage} />
+        <Route path="/optimized-results" component={OptimizedResultsPage} />
         <Route path="/calculation" component={CalculationPage} />
+        <Route path="/contracts" component={ContractsPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

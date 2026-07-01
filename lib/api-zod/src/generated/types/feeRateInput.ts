@@ -13,4 +13,8 @@ export interface FeeRateInput {
   equipmentCost?: number;
   /** Construction grade: Cấp đặc biệt | Cấp I | Cấp II | Cấp III | Cấp IV */
   constructionGrade: string;
+  /** Construction type for supervision rate lookup (Bảng 2.24 TT38/2026): Dân dụng | Giao thông */
+  constructionType?: string;
+  /** Số bước thiết kế (gói thiết kế): 2 = chỉ BVTC (Bảng chẵn) | 3 = TKKT + BVTC (Bảng lẻ × hệ số). Mặc định 3. */
+  designStep?: number;
 }

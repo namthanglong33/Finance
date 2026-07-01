@@ -1,15 +1,16 @@
-import { useFinancial, DEFAULT_INPUT } from "@/context/FinancialContext";
+import { useFinancial } from "@/context/FinancialContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { useCalculate, useGetFeeRates, useGetScenarios } from "@workspace/api-client-react";
+import { useCalculate, useGetFeeRates } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Calculator, Save, FileText } from "lucide-react";
-import { useState } from "react";
+import { Loader2, Calculator } from "lucide-react";
+import { usePersistentState } from "@/hooks/use-persistent-state";
 import type { FinancialInput } from "@workspace/api-client-react";
 import { formatVND } from "@/lib/utils";
 
@@ -17,21 +18,28 @@ export default function InputPage() {
   const { input, setInput, setResult, setLastUpdated } = useFinancial();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  
-  const [grade, setGrade] = useState("Cấp III");
-  
+
+  // Giữ lại khi chuyển mục / tải lại trang
+  const [grade, setGrade] = usePersistentState("ntl.input.grade", "Cấp III");
+  const [constructionType, setConstructionType] = usePersistentState("ntl.input.constructionType", "Dân dụng");
+  const [bidValue, setBidValue] = usePersistentState<number>("ntl.input.bidValue", input.constructionValue);
+
   const calculateMutation = useCalculate();
   const feeRateMutation = useGetFeeRates();
-  const { data: scenarios, isLoading: loadingScenarios } = useGetScenarios();
 
-  const handleInputChange = (field: keyof FinancialInput, value: string) => {
+  const handleFieldChange = (field: keyof FinancialInput, value: number) => {
+    setInput(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleRateChange = (field: keyof FinancialInput, value: string) => {
     const numValue = value === "" ? 0 : parseFloat(value);
     setInput(prev => ({ ...prev, [field]: numValue }));
   };
 
   const handleCalculateFeeRates = () => {
     feeRateMutation.mutate(
-      { data: { constructionValue: input.constructionValue, constructionGrade: grade } },
+      // Kế hoạch kinh doanh giả định toàn bộ gói thiết kế là THIẾT KẾ 2 BƯỚC (chỉ BVTC, Bảng chẵn)
+      { data: { constructionValue: bidValue, constructionGrade: grade, constructionType, designStep: 2 } },
       {
         onSuccess: (res) => {
           setInput(prev => ({
@@ -79,14 +87,6 @@ export default function InputPage() {
     );
   };
 
-  const loadScenario = (scenarioInput: FinancialInput) => {
-    setInput(scenarioInput);
-    toast({
-      title: "Đã tải kịch bản",
-      description: "Các thông số đã được điền tự động.",
-    });
-  };
-
   return (
     <div className="p-6 max-w-5xl mx-auto pb-24">
       <div className="mb-6">
@@ -96,46 +96,44 @@ export default function InputPage() {
         </p>
       </div>
 
-      {Array.isArray(scenarios) && scenarios.length > 0 && (
-        <Card className="mb-6 border-dashed border-primary/30 bg-primary/5">
-          <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm font-medium flex items-center text-primary">
-              <FileText className="w-4 h-4 mr-2" />
-              Kịch bản mẫu
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 flex gap-2 overflow-x-auto">
-            <Button variant="outline" size="sm" onClick={() => setInput(DEFAULT_INPUT)} className="bg-background">
-              Mặc định
-            </Button>
-            {scenarios.map(s => (
-              <Button key={s.id} variant="outline" size="sm" onClick={() => loadScenario(s.input)} className="bg-background">
-                {s.name}
-              </Button>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
       <div className="space-y-6">
-        {/* Section 1: Thông tin gói thầu */}
+        {/* Section 1: Thông tin gói thầu — chỉ nội suy tỷ lệ phí */}
         <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-lg">Thông tin gói thầu & Tỷ lệ phí</CardTitle>
+            <CardDescription>
+              Nội suy tỷ lệ phí % Giám sát (Bảng 2.24) &amp; Thiết kế (giả định <strong>thiết kế 2 bước</strong> — chỉ BVTC,
+              Bảng 2.8/2.10/2.12/2.14/2.16) theo TT 38/2026/TT-BXD.
+              Giá trị ở đây chỉ dùng để tra bậc tỷ lệ, không trực tiếp tính doanh thu.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="constructionValue">Giá trị Xây lắp (VNĐ, chưa VAT)</Label>
-                <Input 
-                  id="constructionValue" 
-                  type="number" 
-                  value={input.constructionValue} 
-                  onChange={(e) => handleInputChange("constructionValue", e.target.value)} 
+                <Label htmlFor="bidValue">Giá trị gói thầu (VNĐ, để nội suy tỷ lệ)</Label>
+                <CurrencyInput
+                  id="bidValue"
+                  value={bidValue}
+                  onChange={setBidValue}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Cấp công trình</Label>
+                <Label>Loại công trình (Giám sát &amp; Thiết kế)</Label>
+                <Select value={constructionType} onValueChange={setConstructionType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Chọn loại" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Dân dụng">Dân dụng</SelectItem>
+                    <SelectItem value="Công nghiệp">Công nghiệp</SelectItem>
+                    <SelectItem value="Giao thông">Giao thông</SelectItem>
+                    <SelectItem value="Nông nghiệp & môi trường">Nông nghiệp &amp; môi trường</SelectItem>
+                    <SelectItem value="Hạ tầng kỹ thuật">Hạ tầng kỹ thuật</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Cấp công trình (thiết kế)</Label>
                 <Select value={grade} onValueChange={setGrade}>
                   <SelectTrigger>
                     <SelectValue placeholder="Chọn cấp" />
@@ -150,9 +148,9 @@ export default function InputPage() {
                 </Select>
               </div>
               <div className="flex items-end">
-                <Button 
-                  type="button" 
-                  variant="secondary" 
+                <Button
+                  type="button"
+                  variant="secondary"
                   className="w-full"
                   onClick={handleCalculateFeeRates}
                   disabled={feeRateMutation.isPending}
@@ -166,23 +164,59 @@ export default function InputPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
               <div className="space-y-2">
                 <Label htmlFor="supervisionRate">Tỷ lệ phí Giám sát (Hệ số - VD: 0.03285)</Label>
-                <Input 
-                  id="supervisionRate" 
-                  type="number" 
+                <Input
+                  id="supervisionRate"
+                  type="number"
                   step="0.00001"
-                  value={input.supervisionRate} 
-                  onChange={(e) => handleInputChange("supervisionRate", e.target.value)} 
+                  value={input.supervisionRate}
+                  onChange={(e) => handleRateChange("supervisionRate", e.target.value)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="designRate">Tỷ lệ phí Thiết kế (Hệ số - VD: 0.0341)</Label>
-                <Input 
-                  id="designRate" 
-                  type="number" 
+                <Input
+                  id="designRate"
+                  type="number"
                   step="0.00001"
-                  value={input.designRate} 
-                  onChange={(e) => handleInputChange("designRate", e.target.value)} 
+                  value={input.designRate}
+                  onChange={(e) => handleRateChange("designRate", e.target.value)}
                 />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Section 1a: Tổng giá trị xây lắp — cơ sở tính doanh thu */}
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg">Tổng giá trị xây lắp</CardTitle>
+            <CardDescription>
+              Giá trị xây lắp thực tế của hợp đồng. Doanh thu = Tổng giá trị xây lắp × Tỷ lệ phí đã nội suy ở trên
+              (Giám sát + Thiết kế). Đây là con số được đưa vào toàn bộ tính toán.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="constructionValue">Tổng giá trị xây lắp (VNĐ, chưa VAT)</Label>
+                <CurrencyInput
+                  id="constructionValue"
+                  value={input.constructionValue}
+                  onChange={(v) => handleFieldChange("constructionValue", v)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Tỷ lệ đang áp dụng — Giám sát: {(input.supervisionRate * 100).toFixed(4)}% · Thiết kế: {(input.designRate * 100).toFixed(4)}%
+                </p>
+              </div>
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setInput(prev => ({ ...prev, constructionValue: bidValue }))}
+                >
+                  Lấy bằng giá trị gói thầu ({formatVND(bidValue)})
+                </Button>
               </div>
             </div>
           </CardContent>
@@ -193,7 +227,7 @@ export default function InputPage() {
           <Card className="border-primary/20 bg-primary/5">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Doanh thu gói Giám sát & Thiết kế (tính toán)</CardTitle>
-              <CardDescription>Tự động tính dựa trên Giá trị Xây lắp × Tỷ lệ phí đã nhập</CardDescription>
+              <CardDescription>Tự động tính dựa trên Tổng giá trị xây lắp × Tỷ lệ phí đã nhập</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -239,22 +273,22 @@ export default function InputPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="kickbackRateType1">Tỷ lệ cắt lại - Loại 1 (Chỉ CĐT cấp việc - VD: 0.55)</Label>
-                <Input 
-                  id="kickbackRateType1" 
-                  type="number" 
+                <Input
+                  id="kickbackRateType1"
+                  type="number"
                   step="0.01"
-                  value={input.kickbackRateType1} 
-                  onChange={(e) => handleInputChange("kickbackRateType1", e.target.value)} 
+                  value={input.kickbackRateType1}
+                  onChange={(e) => handleRateChange("kickbackRateType1", e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="kickbackRateType2">Tỷ lệ cắt lại - Loại 2 (Lo trọn gói - VD: 0.40)</Label>
-                <Input 
-                  id="kickbackRateType2" 
-                  type="number" 
+                <Label htmlFor="kickbackRateType2">Tỷ lệ cắt lại - Loại 2 (Lo trọn gói - VD: 0.35)</Label>
+                <Input
+                  id="kickbackRateType2"
+                  type="number"
                   step="0.01"
-                  value={input.kickbackRateType2} 
-                  onChange={(e) => handleInputChange("kickbackRateType2", e.target.value)} 
+                  value={input.kickbackRateType2}
+                  onChange={(e) => handleRateChange("kickbackRateType2", e.target.value)}
                 />
               </div>
             </div>
@@ -270,63 +304,60 @@ export default function InputPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
               <div className="space-y-2">
                 <Label htmlFor="directorSalaryMonthly">Lương GĐ/tháng (VNĐ)</Label>
-                <Input 
-                  id="directorSalaryMonthly" 
-                  type="number" 
-                  value={input.directorSalaryMonthly} 
-                  onChange={(e) => handleInputChange("directorSalaryMonthly", e.target.value)} 
+                <CurrencyInput
+                  id="directorSalaryMonthly"
+                  value={input.directorSalaryMonthly}
+                  onChange={(v) => handleFieldChange("directorSalaryMonthly", v)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="accountantSalaryMonthly">Lương Kế toán/tháng (VNĐ)</Label>
-                <Input 
-                  id="accountantSalaryMonthly" 
-                  type="number" 
-                  value={input.accountantSalaryMonthly} 
-                  onChange={(e) => handleInputChange("accountantSalaryMonthly", e.target.value)} 
+                <CurrencyInput
+                  id="accountantSalaryMonthly"
+                  value={input.accountantSalaryMonthly}
+                  onChange={(v) => handleFieldChange("accountantSalaryMonthly", v)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="insuranceRate">Tỷ lệ BHXH Doanh nghiệp đóng (VD: 0.215)</Label>
-                <Input 
-                  id="insuranceRate" 
-                  type="number" 
+                <Input
+                  id="insuranceRate"
+                  type="number"
                   step="0.005"
-                  value={input.insuranceRate} 
-                  onChange={(e) => handleInputChange("insuranceRate", e.target.value)} 
+                  value={input.insuranceRate}
+                  onChange={(e) => handleRateChange("insuranceRate", e.target.value)}
                 />
               </div>
             </div>
-            
+
             <Separator className="my-4" />
-            
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="maxWageFundRate">Trần quỹ lương HĐ Loại 2 (% doanh thu, VD: 0.15)</Label>
-                <Input 
-                  id="maxWageFundRate" 
-                  type="number" 
+                <Input
+                  id="maxWageFundRate"
+                  type="number"
                   step="0.01"
-                  value={input.maxWageFundRate ?? 0.15} 
-                  onChange={(e) => handleInputChange("maxWageFundRate", e.target.value)} 
+                  value={input.maxWageFundRate ?? 0.15}
+                  onChange={(e) => handleRateChange("maxWageFundRate", e.target.value)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="technicianSalaryMonthly">Lương Kỹ sư/tháng (VNĐ)</Label>
-                <Input 
-                  id="technicianSalaryMonthly" 
-                  type="number" 
-                  value={input.technicianSalaryMonthly} 
-                  onChange={(e) => handleInputChange("technicianSalaryMonthly", e.target.value)} 
+                <CurrencyInput
+                  id="technicianSalaryMonthly"
+                  value={input.technicianSalaryMonthly}
+                  onChange={(v) => handleFieldChange("technicianSalaryMonthly", v)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="numTechnicians">Số Kỹ sư thực tế muốn thuê (Loại 2)</Label>
-                <Input 
-                  id="numTechnicians" 
-                  type="number" 
-                  value={input.numTechnicians} 
-                  onChange={(e) => handleInputChange("numTechnicians", e.target.value)} 
+                <Input
+                  id="numTechnicians"
+                  type="number"
+                  value={input.numTechnicians}
+                  onChange={(e) => handleRateChange("numTechnicians", e.target.value)}
                 />
               </div>
             </div>
@@ -387,41 +418,38 @@ export default function InputPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
               <div className="space-y-2">
                 <Label htmlFor="officeRentMonthly">Thuê văn phòng (VNĐ)</Label>
-                <Input 
-                  id="officeRentMonthly" 
-                  type="number" 
-                  value={input.officeRentMonthly} 
-                  onChange={(e) => handleInputChange("officeRentMonthly", e.target.value)} 
+                <CurrencyInput
+                  id="officeRentMonthly"
+                  value={input.officeRentMonthly}
+                  onChange={(v) => handleFieldChange("officeRentMonthly", v)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="travelEntertainMonthly">Đi lại & Tiếp khách (VNĐ)</Label>
-                <Input 
-                  id="travelEntertainMonthly" 
-                  type="number" 
-                  value={input.travelEntertainMonthly} 
-                  onChange={(e) => handleInputChange("travelEntertainMonthly", e.target.value)} 
+                <CurrencyInput
+                  id="travelEntertainMonthly"
+                  value={input.travelEntertainMonthly}
+                  onChange={(v) => handleFieldChange("travelEntertainMonthly", v)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="otherCostMonthly">Chi phí khác (VNĐ)</Label>
-                <Input 
-                  id="otherCostMonthly" 
-                  type="number" 
-                  value={input.otherCostMonthly} 
-                  onChange={(e) => handleInputChange("otherCostMonthly", e.target.value)} 
+                <CurrencyInput
+                  id="otherCostMonthly"
+                  value={input.otherCostMonthly}
+                  onChange={(v) => handleFieldChange("otherCostMonthly", v)}
                 />
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
               <div className="space-y-2">
                 <Label htmlFor="fixedCostDeductibleRate">Tỷ lệ chi phí cố định có hóa đơn hợp lệ (VD: 0.8)</Label>
-                <Input 
-                  id="fixedCostDeductibleRate" 
-                  type="number" 
+                <Input
+                  id="fixedCostDeductibleRate"
+                  type="number"
                   step="0.05"
-                  value={input.fixedCostDeductibleRate || 0} 
-                  onChange={(e) => handleInputChange("fixedCostDeductibleRate", e.target.value)} 
+                  value={input.fixedCostDeductibleRate || 0}
+                  onChange={(e) => handleRateChange("fixedCostDeductibleRate", e.target.value)}
                 />
               </div>
             </div>
@@ -437,47 +465,47 @@ export default function InputPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
               <div className="space-y-2">
                 <Label htmlFor="corporateTaxRate">Thuế suất TNDN (VD: 0.17 cho DN nhỏ)</Label>
-                <Input 
-                  id="corporateTaxRate" 
-                  type="number" 
+                <Input
+                  id="corporateTaxRate"
+                  type="number"
                   step="0.01"
-                  value={input.corporateTaxRate} 
-                  onChange={(e) => handleInputChange("corporateTaxRate", e.target.value)} 
+                  value={input.corporateTaxRate}
+                  onChange={(e) => handleRateChange("corporateTaxRate", e.target.value)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="vatRate">Thuế suất VAT đầu ra (VD: 0.08)</Label>
-                <Input 
-                  id="vatRate" 
-                  type="number" 
+                <Input
+                  id="vatRate"
+                  type="number"
                   step="0.01"
-                  value={input.vatRate} 
-                  onChange={(e) => handleInputChange("vatRate", e.target.value)} 
+                  value={input.vatRate}
+                  onChange={(e) => handleRateChange("vatRate", e.target.value)}
                 />
               </div>
             </div>
-            
+
             <Separator className="my-4" />
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="signingCostRateType1">Chi phí ký hồ sơ - Loại 1 (VD: 0.05)</Label>
-                <Input 
-                  id="signingCostRateType1" 
-                  type="number" 
+                <Input
+                  id="signingCostRateType1"
+                  type="number"
                   step="0.01"
-                  value={input.signingCostRateType1} 
-                  onChange={(e) => handleInputChange("signingCostRateType1", e.target.value)} 
+                  value={input.signingCostRateType1}
+                  onChange={(e) => handleRateChange("signingCostRateType1", e.target.value)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="signingCostRateType2">Chi phí ký hồ sơ - Loại 2 (VD: 0.02)</Label>
-                <Input 
-                  id="signingCostRateType2" 
-                  type="number" 
+                <Input
+                  id="signingCostRateType2"
+                  type="number"
                   step="0.01"
-                  value={input.signingCostRateType2} 
-                  onChange={(e) => handleInputChange("signingCostRateType2", e.target.value)} 
+                  value={input.signingCostRateType2}
+                  onChange={(e) => handleRateChange("signingCostRateType2", e.target.value)}
                 />
               </div>
             </div>
@@ -486,9 +514,9 @@ export default function InputPage() {
       </div>
 
       <div className="fixed bottom-0 left-64 right-0 p-4 bg-background/80 backdrop-blur-md border-t border-border flex justify-end gap-4 z-10 shadow-lg">
-        <Button 
-          onClick={handleSubmit} 
-          size="lg" 
+        <Button
+          onClick={handleSubmit}
+          size="lg"
           disabled={calculateMutation.isPending}
           className="px-8"
         >

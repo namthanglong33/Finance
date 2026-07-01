@@ -9,8 +9,10 @@ import {
   Loader2, TrendingDown, CheckCircle2, AlertTriangle,
   ShieldCheck, UserPlus, Settings,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { formatVND, formatPercent } from "@/lib/utils";
+import { calcProgressivePIT, pitBracketLabel, applyCt7ToBase, CT7_SLOTS_LS_KEY, DEFAULT_CT7_SLOT, type Ct7SlotConfig } from "@/lib/ct7-optimize";
+import { usePersistentState } from "@/hooks/use-persistent-state";
 import type { CostAllocation, OptimizeContractResult } from "@workspace/api-client-react";
 import { Link } from "wouter";
 
@@ -50,9 +52,9 @@ function TaxSnapshot({ d, contractLabel }: { d: OptimizeContractResult; contract
   );
 }
 
-// ── Too-high warning (target exceeds 90% of CIT) ─────────────────────────────
+// ── Too-high warning (target exceeds 100% of CIT) ────────────────────────────
 function TooHighWarning({ d }: { d: OptimizeContractResult }) {
-  const maxSaveable = d.currentCorporateTax * 0.9;
+  const maxSaveable = d.currentCorporateTax; // tối đa tiết kiệm = 100% thuế TNDN
   const maxReachable = d.currentNetProfit + maxSaveable;
   return (
     <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20 p-5 flex items-start gap-3">
@@ -62,8 +64,8 @@ function TooHighWarning({ d }: { d: OptimizeContractResult }) {
           Kỳ vọng quá cao — Không đạt được chỉ bằng tối ưu thuế TNDN
         </p>
         <p className="text-xs text-red-700 dark:text-red-400">
-          Mục tiêu lãi ròng <strong>{formatVND(d.targetNetProfit)}</strong> yêu cầu tiết kiệm thuế cao hơn 90% số thuế TNDN hiện tại ({formatVND(d.currentCorporateTax)}).
-          Tối đa có thể tiết kiệm: <strong>{formatVND(maxSaveable)}</strong> → đạt lãi ròng tối đa <strong>{formatVND(maxReachable)}</strong> qua tối ưu thuế.
+          Mục tiêu lãi ròng <strong>{formatVND(d.targetNetProfit)}</strong> yêu cầu tiết kiệm thuế vượt 100% số thuế TNDN hiện tại ({formatVND(d.currentCorporateTax)}).
+          Tối đa có thể tiết kiệm: <strong>{formatVND(maxSaveable)}</strong> (xóa hết thuế TNDN) → đạt lãi ròng tối đa <strong>{formatVND(maxReachable)}</strong> qua tối ưu thuế.
         </p>
         <p className="text-xs text-red-700 dark:text-red-400">
           👉 Hãy giảm mục tiêu về ≤ {formatVND(Math.floor(maxReachable / 1_000_000) * 1_000_000)} hoặc kết hợp thêm các biện pháp tăng doanh thu.
@@ -211,39 +213,7 @@ function ContractOptimizeResult({ d, label }: { d: OptimizeContractResult; label
 
 // ── Biểu thuế TNCN lũy tiến 2026 (từ 1/1/2026) ──────────────────────────────
 // Nguồn: Luật thuế TNCN sửa đổi 2026
-const PIT_BRACKETS_2026 = [
-  { limit: 10_000_000,  rate: 0.05 },  // Bậc 1: đến 10 tr/tháng → 5%
-  { limit: 30_000_000,  rate: 0.10 },  // Bậc 2: 10–30 tr/tháng  → 10%
-  { limit: 60_000_000,  rate: 0.20 },  // Bậc 3: 30–60 tr/tháng  → 20%
-  { limit: 100_000_000, rate: 0.30 },  // Bậc 4: 60–100 tr/tháng → 30%
-  { limit: Infinity,    rate: 0.35 },  // Bậc 5: trên 100 tr     → 35%
-];
-
-/** Tính thuế TNCN lũy tiến từ thu nhập tính thuế/tháng */
-function calcProgressivePIT(taxableMonthly: number): number {
-  if (taxableMonthly <= 0) return 0;
-  let tax = 0;
-  let prev = 0;
-  for (const { limit, rate } of PIT_BRACKETS_2026) {
-    const slice = Math.min(taxableMonthly, limit) - prev;
-    if (slice <= 0) break;
-    tax += slice * rate;
-    prev = limit;
-    if (taxableMonthly <= limit) break;
-  }
-  return Math.round(tax);
-}
-
-/** Xác định bậc thuế hiện tại của thu nhập tính thuế/tháng */
-function pitBracketLabel(taxableMonthly: number): string {
-  let prev = 0;
-  for (let i = 0; i < PIT_BRACKETS_2026.length; i++) {
-    const { limit } = PIT_BRACKETS_2026[i];
-    if (taxableMonthly <= limit) return `Bậc ${i + 1} (${(PIT_BRACKETS_2026[i].rate * 100).toFixed(0)}%)`;
-    prev = limit;
-  }
-  return `Bậc 5 (35%)`;
-}
+// PIT lũy tiến + helper CT7 dùng chung tại @/lib/ct7-optimize
 
 // ── Chiến thuật 7: Outsourced staff CIT calculator ───────────────────────────
 function OutsourcedStaffCard({
@@ -255,47 +225,45 @@ function OutsourcedStaffCard({
   optResult: { type1: OptimizeContractResult; type2: OptimizeContractResult } | null;
   activeTab: "type1" | "type2";
 }) {
-  const LS_KEY = "ct7_config_v2";
-  const savedConfig = (() => { try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch { return {}; } })();
+  // Cấu hình CT7 lưu RIÊNG cho từng loại hợp đồng (type1/type2); tự đổi theo activeTab đang xem.
+  const [allCfg, setAllCfg] = usePersistentState<{ type1: Ct7SlotConfig; type2: Ct7SlotConfig }>(
+    CT7_SLOTS_LS_KEY,
+    { type1: { ...DEFAULT_CT7_SLOT }, type2: { ...DEFAULT_CT7_SLOT } },
+  );
+  const slot = allCfg[activeTab] ?? DEFAULT_CT7_SLOT;
+  const patchSlot = (p: Partial<Ct7SlotConfig>) =>
+    setAllCfg((prev) => ({ ...prev, [activeTab]: { ...(prev[activeTab] ?? DEFAULT_CT7_SLOT), ...p } }));
 
-  // ── Tab state (mỗi loại hợp đồng có cấu hình riêng) ──────────────────────
-  const [activeContractTab, setActiveContractTab] = useState<"ctv" | "hdld">(savedConfig.activeContractTab ?? "ctv");
+  // ── Reads từ slot của loại HĐ đang xem ──────────────────────────────────────
+  const activeContractTab = slot.activeContractTab;
+  const ctvNumStaff = slot.ctvNumStaff;
+  const ctvMonthlyGross = slot.ctvMonthlyGross;
+  const hdldNumStaff = slot.hdldNumStaff;
+  const hdldMonthlyGross = slot.hdldMonthlyGross;
+  const hdldExcludeInsurance = slot.hdldExcludeInsurance;
+  const pitThreshold = slot.pitThreshold;
+  const legitimizePct = slot.legitimizePct;
 
-  const [ctvNumStaff, setCtvNumStaff] = useState<number>(savedConfig.ctvNumStaff ?? 1);
-  const [ctvMonthlyGross, setCtvMonthlyGross] = useState<number>(savedConfig.ctvMonthlyGross ?? 10_000_000);
+  const setActiveContractTab = (v: "ctv" | "hdld") => patchSlot({ activeContractTab: v });
+  const setPitThreshold = (v: number) => patchSlot({ pitThreshold: v });
+  const setLegitimizePct = (v: number) => patchSlot({ legitimizePct: v });
+
+  // autoFilled chỉ là cờ giao diện (không lưu)
   const [ctvAutoFilled, setCtvAutoFilled] = useState(false);
-
-  const [hdldNumStaff, setHdldNumStaff] = useState<number>(savedConfig.hdldNumStaff ?? 1);
-  const [hdldMonthlyGross, setHdldMonthlyGross] = useState<number>(savedConfig.hdldMonthlyGross ?? 10_000_000);
   const [hdldAutoFilled, setHdldAutoFilled] = useState(false);
-  const [hdldExcludeInsurance, setHdldExcludeInsurance] = useState<boolean>(savedConfig.hdldExcludeInsurance ?? false);
-
-  // ── Shared config ─────────────────────────────────────────────────────────
-  const [pitThreshold, setPitThreshold] = useState<number>(savedConfig.pitThreshold ?? 15_000_000);
-  const [legitimizePct, setLegitimizePct] = useState<number>(savedConfig.legitimizePct ?? 90);
   const [showComprehensive, setShowComprehensive] = useState(false);
 
-  // ── Active tab derived values (proxy) ─────────────────────────────────────
+  // ── Active tab derived values (proxy theo CTV/HĐLĐ) ─────────────────────────
   const contractType = activeContractTab;
   const numStaff = activeContractTab === "ctv" ? ctvNumStaff : hdldNumStaff;
   const monthlyGross = activeContractTab === "ctv" ? ctvMonthlyGross : hdldMonthlyGross;
   const autoFilled = activeContractTab === "ctv" ? ctvAutoFilled : hdldAutoFilled;
   const excludeInsurance = activeContractTab === "hdld" ? hdldExcludeInsurance : false;
 
-  const setNumStaff = (v: number) => activeContractTab === "ctv" ? setCtvNumStaff(v) : setHdldNumStaff(v);
-  const setMonthlyGross = (v: number) => activeContractTab === "ctv" ? setCtvMonthlyGross(v) : setHdldMonthlyGross(v);
+  const setNumStaff = (v: number) => activeContractTab === "ctv" ? patchSlot({ ctvNumStaff: v }) : patchSlot({ hdldNumStaff: v });
+  const setMonthlyGross = (v: number) => activeContractTab === "ctv" ? patchSlot({ ctvMonthlyGross: v }) : patchSlot({ hdldMonthlyGross: v });
   const setAutoFilled = (v: boolean) => activeContractTab === "ctv" ? setCtvAutoFilled(v) : setHdldAutoFilled(v);
-  const setExcludeInsurance = (v: boolean) => setHdldExcludeInsurance(v);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify({
-        activeContractTab, pitThreshold, legitimizePct,
-        ctvNumStaff, ctvMonthlyGross,
-        hdldNumStaff, hdldMonthlyGross, hdldExcludeInsurance,
-      }));
-    } catch {}
-  }, [activeContractTab, pitThreshold, legitimizePct, ctvNumStaff, ctvMonthlyGross, hdldNumStaff, hdldMonthlyGross, hdldExcludeInsurance]);
+  const setExcludeInsurance = (v: boolean) => patchSlot({ hdldExcludeInsurance: v });
 
   // PIT lũy tiến 2026: Thu nhập tính thuế = Gross − giảm trừ gia cảnh (pitThreshold)
   const taxableIncomeMonthly = Math.max(0, monthlyGross - pitThreshold);
@@ -355,23 +323,19 @@ function OutsourcedStaffCard({
     setAutoFilled(true);
   };
 
-  // ── Tổng hợp CT7 (chỉ chiến thuật 7, bắt đầu từ số liệu gốc) ───────────────
-  const comprehensiveResult = baseOpt ? (() => {
-    const taxRate = corporateTaxRate;
-    // Chỉ dùng CT7, áp vào lãi gộp ban đầu (currentTaxableIncome)
-    const newTaxableIncome = Math.max(0, baseOpt.currentTaxableIncome - totalDeductibleAnnual);
-    const newCIT = newTaxableIncome * taxRate;
-    const ct7CITSaved = Math.max(0, baseOpt.currentCorporateTax - newCIT);
-    // Lãi ròng: bắt đầu từ lãi ròng ban đầu, cộng thuế tiết kiệm, trừ chi phí thực
-    const finalNetProfit = baseOpt.currentNetProfit + ct7CITSaved - section7RealCost;
-    return {
-      newTaxableIncome,
-      newCIT,
-      ct7CITSaved,
-      finalNetProfit,
-      finalNetProfitMonthly: finalNetProfit / 12,
-    };
-  })() : null;
+  // ── Tổng hợp CT7 (dùng helper chung @/lib/ct7-optimize để đồng bộ với trang Kết quả sau tối ưu) ──
+  const comprehensiveResult = baseOpt
+    ? applyCt7ToBase(
+        {
+          taxableIncome: baseOpt.currentTaxableIncome,
+          corporateTax: baseOpt.currentCorporateTax,
+          netProfit: baseOpt.currentNetProfit,
+        },
+        totalDeductibleAnnual,
+        section7RealCost,
+        corporateTaxRate,
+      )
+    : null;
 
   return (
     <Card className="border-purple-200 dark:border-purple-800">
@@ -875,12 +839,14 @@ export default function OptimizePage() {
   const { toast } = useToast();
   const optimizeMutation = useOptimize();
 
-  const [targetProfitPct, setTargetProfitPct] = useState<number>(10);
+  const [targetProfitPctType1, setTargetProfitPctType1] = usePersistentState<number>("ntl.optimize.targetPctType1", 10);
+  const [targetProfitPctType2, setTargetProfitPctType2] = usePersistentState<number>("ntl.optimize.targetPctType2", 10);
   const [optResult, setOptResult] = useState<{ type1: OptimizeContractResult; type2: OptimizeContractResult } | null>(null);
   const [activeTab, setActiveTab] = useState<"type1" | "type2">("type1");
 
   const revenue = calcResult?.totalRevenue ?? 0;
-  const targetProfit = (targetProfitPct / 100) * revenue;
+  const targetProfitType1 = (targetProfitPctType1 / 100) * revenue;
+  const targetProfitType2 = (targetProfitPctType2 / 100) * revenue;
 
   const handleOptimize = () => {
     if (!calcResult) {
@@ -888,7 +854,7 @@ export default function OptimizePage() {
       return;
     }
     optimizeMutation.mutate(
-      { data: { financialInput: input, targetNetProfit: targetProfit, allocationL1: DEFAULT_ALLOC_L1, allocationL2: DEFAULT_ALLOC_L2 } },
+      { data: { financialInput: input, targetNetProfitType1: targetProfitType1, targetNetProfitType2: targetProfitType2, allocationL1: DEFAULT_ALLOC_L1, allocationL2: DEFAULT_ALLOC_L2 } },
       {
         onSuccess: (res) => {
           setOptResult(res);
@@ -932,37 +898,57 @@ export default function OptimizePage() {
       <Card className="mb-6">
         <CardContent className="pt-5 pb-5">
           <div className="flex flex-wrap items-end gap-5">
-            <div className="space-y-1.5 min-w-[260px]">
-              <Label>Lãi ròng kỳ vọng (% doanh thu)</Label>
-              <div className="flex items-center gap-2">
-                <div className="relative max-w-[140px]">
-                  <Input
-                    type="number"
-                    step={0.5}
-                    min={0}
-                    max={100}
-                    value={targetProfitPct}
-                    onChange={e => setTargetProfitPct(Number(e.target.value))}
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
+            <div className="space-y-1.5">
+              <Label>Lãi ròng kỳ vọng (% doanh thu) — riêng từng loại HĐ</Label>
+              <div className="flex flex-wrap items-start gap-5">
+                {/* Loại 1 */}
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-muted-foreground w-12">Loại 1</span>
+                    <div className="relative max-w-[120px]">
+                      <Input
+                        type="number"
+                        step={0.5}
+                        min={0}
+                        max={100}
+                        value={targetProfitPctType1}
+                        onChange={e => setTargetProfitPctType1(Number(e.target.value))}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">= {formatVND(targetProfitType1)}/năm</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground pl-14">
+                    Biên hiện tại:{" "}
+                    <span className={calcResult.type1.netMargin >= 0 ? "text-green-600" : "text-red-600"}>
+                      {formatPercent(calcResult.type1.netMargin)}
+                    </span>
+                  </div>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  = {formatVND(targetProfit)}/năm
-                </span>
-              </div>
-              <div className="text-xs text-muted-foreground space-x-3">
-                <span>
-                  Biên hiện tại — L1:{" "}
-                  <span className={calcResult.type1.netMargin >= 0 ? "text-green-600" : "text-red-600"}>
-                    {formatPercent(calcResult.type1.netMargin)}
-                  </span>
-                </span>
-                <span>
-                  L2:{" "}
-                  <span className={calcResult.type2.netMargin >= 0 ? "text-green-600" : "text-red-600"}>
-                    {formatPercent(calcResult.type2.netMargin)}
-                  </span>
-                </span>
+                {/* Loại 2 */}
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-muted-foreground w-12">Loại 2</span>
+                    <div className="relative max-w-[120px]">
+                      <Input
+                        type="number"
+                        step={0.5}
+                        min={0}
+                        max={100}
+                        value={targetProfitPctType2}
+                        onChange={e => setTargetProfitPctType2(Number(e.target.value))}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">= {formatVND(targetProfitType2)}/năm</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground pl-14">
+                    Biên hiện tại:{" "}
+                    <span className={calcResult.type2.netMargin >= 0 ? "text-green-600" : "text-red-600"}>
+                      {formatPercent(calcResult.type2.netMargin)}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 

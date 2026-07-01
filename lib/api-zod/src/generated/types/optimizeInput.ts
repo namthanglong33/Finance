@@ -10,8 +10,12 @@ import type { FinancialInput } from './financialInput';
 
 export interface OptimizeInput {
   financialInput: FinancialInput;
-  /** Target annual net profit (VND) */
-  targetNetProfit: number;
+  /** Target annual net profit (VND) — chung cho cả 2 loại nếu không truyền riêng */
+  targetNetProfit?: number;
+  /** Target annual net profit cho HĐ Loại 1 (VND) */
+  targetNetProfitType1?: number;
+  /** Target annual net profit cho HĐ Loại 2 (VND) */
+  targetNetProfitType2?: number;
   allocationL1: CostAllocation;
   allocationL2: CostAllocation;
 }

@@ -12,36 +12,156 @@ import type {
 
 const router = Router();
 
-// ─── TT 12/2021 Fee Rate Tables ─────────────────────────────────────────────
+// ─── TT 38/2026/TT-BXD Fee Rate Tables (Phụ lục VIII, hiệu lực 26/6/2026) ───
+// Giám sát: Bảng 2.24 (5 loại công trình).
+// Thiết kế: Bảng 2.7/2.9/2.11/2.13/2.15 (thiết kế kỹ thuật, theo loại × cấp),
+//   tỷ lệ phí gộp = định mức × hệ số BVTC (KT + bản vẽ thi công).
+//   Hệ số BVTC = 1.55, riêng Công nghiệp = 1.60 (BVTC = 60% theo Bảng 2.9).
+// Đơn vị bảng: % chi phí xây dựng (chưa VAT). Cột chi phí xây dựng (tỷ đồng) tăng dần.
+// Nội suy: Nt = Nb − (Nb−Na)/(Ga−Gb)×(Gt−Gb).
 
-const SUPERVISION_TABLE: [number, number][] = [
-  [1, 0.055], [5, 0.045], [10, 0.038], [20, 0.033], [50, 0.028],
-  [100, 0.025], [200, 0.022], [500, 0.019], [1000, 0.016], [5000, 0.014],
+const COST_FULL = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 8000, 10000];
+const COST_IV6 = [10, 20, 50, 100, 200, 500]; // Cấp IV: dân dụng, công nghiệp
+const COST_IV7 = [10, 20, 50, 100, 200, 500, 1000]; // Cấp IV: giao thông, nông nghiệp, hạ tầng
+
+// Ghép [chi phí, tỷ lệ] và chuyển % → hệ số thập phân
+function pct(costs: number[], values: number[]): [number, number][] {
+  return costs.map((c, i) => [c, values[i] / 100] as [number, number]);
+}
+
+export const CONSTRUCTION_TYPES = [
+  "Dân dụng", "Công nghiệp", "Giao thông", "Nông nghiệp & môi trường", "Hạ tầng kỹ thuật",
 ];
 
-const DESIGN_TABLES: Record<string, [number, number][]> = {
-  "Cấp đặc biệt": [
-    [1, 0.045], [5, 0.038], [10, 0.033], [20, 0.029], [50, 0.026],
-    [100, 0.023], [200, 0.021], [500, 0.019], [1000, 0.017], [5000, 0.015],
-  ],
-  "Cấp I": [
-    [1, 0.05], [5, 0.042], [10, 0.036], [20, 0.032], [50, 0.028],
-    [100, 0.025], [200, 0.022], [500, 0.02], [1000, 0.018], [5000, 0.016],
-  ],
-  "Cấp II": [
-    [1, 0.054], [5, 0.046], [10, 0.04], [20, 0.035], [50, 0.031],
-    [100, 0.027], [200, 0.024], [500, 0.021], [1000, 0.019], [5000, 0.017],
-  ],
-  "Cấp III": [
-    [1, 0.058], [5, 0.049], [10, 0.043], [20, 0.038], [50, 0.033],
-    [100, 0.029], [200, 0.026], [500, 0.023], [1000, 0.02], [5000, 0.018],
-  ],
-  "Cấp IV": [
-    [1, 0.062], [5, 0.053], [10, 0.047], [20, 0.041], [50, 0.036],
-    [100, 0.031], [200, 0.027], [500, 0.024], [1000, 0.021], [5000, 0.019],
-  ],
+// Bảng 2.24 – Chi phí giám sát thi công xây dựng (đơn vị %, đã là tỷ lệ phí cuối)
+const SUPERVISION_TABLES: Record<string, [number, number][]> = {
+  "Dân dụng": pct(COST_FULL, [3.285, 2.853, 2.435, 1.845, 1.546, 1.188, 0.797, 0.694, 0.620, 0.530, 0.478]),
+  "Công nghiệp": pct(COST_FULL, [3.508, 3.137, 2.559, 2.074, 1.604, 1.301, 0.823, 0.716, 0.640, 0.550, 0.493]),
+  "Giao thông": pct(COST_FULL, [3.203, 2.700, 2.356, 1.714, 1.272, 1.003, 0.731, 0.636, 0.550, 0.480, 0.438]),
+  "Nông nghiệp & môi trường": pct(COST_FULL, [2.598, 2.292, 2.075, 1.545, 1.189, 0.950, 0.631, 0.550, 0.490, 0.420, 0.378]),
+  "Hạ tầng kỹ thuật": pct(COST_FULL, [2.566, 2.256, 1.984, 1.461, 1.142, 0.912, 0.584, 0.509, 0.452, 0.390, 0.350]),
 };
 
+// Hệ số gộp thiết kế kỹ thuật + bản vẽ thi công (BVTC) theo loại công trình
+const DESIGN_BVTC_MULTIPLIER: Record<string, number> = {
+  "Dân dụng": 1.55,
+  "Công nghiệp": 1.60,
+  "Giao thông": 1.55,
+  "Nông nghiệp & môi trường": 1.55,
+  "Hạ tầng kỹ thuật": 1.55,
+};
+
+// Định mức thiết kế kỹ thuật RAW (đơn vị %, CHƯA nhân hệ số BVTC), theo loại × cấp.
+const DESIGN_TECH_PCT: Record<string, Record<string, [number, number][]>> = {
+  // Bảng 2.7
+  "Dân dụng": {
+    "Cấp đặc biệt": pct(COST_FULL, [3.22, 2.81, 2.36, 2.15, 1.96, 1.65, 1.36, 1.16, 0.89, 0.68, 0.61]),
+    "Cấp I": pct(COST_FULL, [2.93, 2.55, 2.14, 1.94, 1.78, 1.50, 1.22, 1.05, 0.80, 0.61, 0.55]),
+    "Cấp II": pct(COST_FULL, [2.67, 2.33, 1.96, 1.77, 1.62, 1.37, 1.11, 0.94, 0.73, 0.55, 0.50]),
+    "Cấp III": pct(COST_FULL, [2.36, 2.07, 1.74, 1.57, 1.43, 1.21, 0.98, 0.83, 0.64, 0.48, 0.44]),
+    "Cấp IV": pct(COST_IV6, [2.07, 1.81, 1.48, 1.30, 1.06, 0.89]),
+  },
+  // Bảng 2.9
+  "Công nghiệp": {
+    "Cấp đặc biệt": pct(COST_FULL, [2.96, 2.73, 2.34, 2.13, 1.92, 1.76, 1.54, 1.30, 0.97, 0.79, 0.70]),
+    "Cấp I": pct(COST_FULL, [2.47, 2.27, 1.93, 1.77, 1.60, 1.46, 1.28, 1.09, 0.80, 0.65, 0.58]),
+    "Cấp II": pct(COST_FULL, [2.03, 1.86, 1.59, 1.46, 1.32, 1.20, 1.05, 0.90, 0.66, 0.53, 0.48]),
+    "Cấp III": pct(COST_FULL, [1.78, 1.65, 1.40, 1.27, 1.17, 1.06, 0.93, 0.79, 0.58, 0.47, 0.42]),
+    "Cấp IV": pct(COST_IV6, [1.59, 1.47, 1.24, 1.14, 0.98, 0.83]),
+  },
+  // Bảng 2.11
+  "Giao thông": {
+    "Cấp đặc biệt": pct(COST_FULL, [2.05, 1.92, 1.68, 1.50, 1.36, 1.24, 1.08, 0.92, 0.68, 0.51, 0.45]),
+    "Cấp I": pct(COST_FULL, [1.44, 1.39, 1.13, 1.05, 0.95, 0.81, 0.68, 0.58, 0.44, 0.34, 0.28]),
+    "Cấp II": pct(COST_FULL, [1.19, 1.08, 0.92, 0.84, 0.77, 0.70, 0.60, 0.51, 0.39, 0.29, 0.25]),
+    "Cấp III": pct(COST_FULL, [1.05, 0.93, 0.81, 0.74, 0.68, 0.58, 0.48, 0.43, 0.32, 0.25, 0.21]),
+    "Cấp IV": pct(COST_IV7, [0.95, 0.87, 0.76, 0.69, 0.59, 0.49, 0.43]),
+  },
+  // Bảng 2.13
+  "Nông nghiệp & môi trường": {
+    "Cấp đặc biệt": pct(COST_FULL, [2.98, 2.60, 2.20, 1.98, 1.83, 1.54, 1.30, 1.13, 0.85, 0.66, 0.58]),
+    "Cấp I": pct(COST_FULL, [2.70, 2.36, 1.99, 1.78, 1.66, 1.39, 1.17, 1.02, 0.77, 0.59, 0.52]),
+    "Cấp II": pct(COST_FULL, [2.48, 2.14, 1.80, 1.61, 1.51, 1.22, 1.05, 0.87, 0.67, 0.49, 0.42]),
+    "Cấp III": pct(COST_FULL, [2.20, 1.90, 1.60, 1.43, 1.24, 1.06, 0.90, 0.77, 0.59, 0.43, 0.37]),
+    "Cấp IV": pct(COST_IV7, [1.74, 1.52, 1.27, 1.12, 1.01, 0.80, 0.64]),
+  },
+  // Bảng 2.15
+  "Hạ tầng kỹ thuật": {
+    "Cấp đặc biệt": pct(COST_FULL, [2.22, 1.94, 1.63, 1.48, 1.36, 1.14, 0.97, 0.83, 0.61, 0.48, 0.43]),
+    "Cấp I": pct(COST_FULL, [2.09, 1.83, 1.53, 1.38, 1.28, 1.04, 0.90, 0.75, 0.53, 0.39, 0.33]),
+    "Cấp II": pct(COST_FULL, [1.86, 1.62, 1.36, 1.22, 1.13, 0.91, 0.78, 0.66, 0.47, 0.34, 0.29]),
+    "Cấp III": pct(COST_FULL, [1.62, 1.39, 1.19, 1.07, 0.97, 0.80, 0.70, 0.56, 0.41, 0.29, 0.25]),
+    "Cấp IV": pct(COST_IV7, [1.45, 1.23, 1.01, 0.92, 0.80, 0.70, 0.58]),
+  },
+};
+
+// Định mức thiết kế BẢN VẼ THI CÔNG (Bảng 2.8/2.10/2.12/2.14/2.16, đơn vị %).
+// Dùng cho công trình THIẾT KẾ 2 BƯỚC (chỉ BVTC, không yêu cầu thiết kế kỹ thuật).
+// Đây là tỷ lệ phí cuối, KHÔNG nhân hệ số BVTC. Cấp IV chỉ tới 500 tỷ.
+const DESIGN_BVTC_PCT: Record<string, Record<string, [number, number][]>> = {
+  // Bảng 2.8
+  "Dân dụng": {
+    "Cấp đặc biệt": pct(COST_FULL, [4.66, 4.05, 3.41, 3.10, 2.83, 2.39, 1.93, 1.65, 1.28, 0.99, 0.91]),
+    "Cấp I": pct(COST_FULL, [4.22, 3.66, 3.10, 2.82, 2.57, 2.17, 1.76, 1.51, 1.16, 0.90, 0.80]),
+    "Cấp II": pct(COST_FULL, [3.85, 3.33, 2.80, 2.54, 2.34, 1.98, 1.61, 1.36, 1.06, 0.82, 0.72]),
+    "Cấp III": pct(COST_FULL, [3.41, 2.95, 2.48, 2.25, 2.07, 1.75, 1.43, 1.20, 0.94, 0.72, 0.63]),
+    "Cấp IV": pct(COST_IV6, [2.92, 2.55, 2.12, 1.86, 1.51, 1.30]),
+  },
+  // Bảng 2.10
+  "Công nghiệp": {
+    "Cấp đặc biệt": pct(COST_FULL, [4.70, 4.27, 3.66, 3.32, 3.01, 2.75, 2.40, 2.03, 1.52, 1.21, 1.04]),
+    "Cấp I": pct(COST_FULL, [3.87, 3.57, 3.02, 2.77, 2.50, 2.28, 2.01, 1.70, 1.26, 1.02, 0.88]),
+    "Cấp II": pct(COST_FULL, [3.13, 2.90, 2.43, 2.24, 2.03, 1.90, 1.66, 1.42, 1.04, 0.82, 0.72]),
+    "Cấp III": pct(COST_FULL, [2.78, 2.57, 2.16, 1.99, 1.79, 1.68, 1.47, 1.25, 0.91, 0.72, 0.64]),
+    "Cấp IV": pct(COST_IV6, [2.46, 2.25, 1.89, 1.72, 1.47, 1.22]),
+  },
+  // Bảng 2.12
+  "Giao thông": {
+    "Cấp đặc biệt": pct(COST_FULL, [3.01, 2.76, 2.36, 2.15, 1.95, 1.78, 1.52, 1.32, 1.02, 0.75, 0.66]),
+    "Cấp I": pct(COST_FULL, [2.27, 2.15, 1.83, 1.67, 1.51, 1.38, 1.21, 1.03, 0.79, 0.61, 0.49]),
+    "Cấp II": pct(COST_FULL, [1.67, 1.55, 1.32, 1.20, 1.10, 1.01, 0.85, 0.72, 0.56, 0.42, 0.36]),
+    "Cấp III": pct(COST_FULL, [1.48, 1.37, 1.17, 1.06, 0.97, 0.82, 0.70, 0.59, 0.45, 0.33, 0.29]),
+    "Cấp IV": pct(COST_IV6, [1.37, 1.26, 1.08, 0.98, 0.83, 0.71]),
+  },
+  // Bảng 2.14
+  "Nông nghiệp & môi trường": {
+    "Cấp đặc biệt": pct(COST_FULL, [4.29, 3.75, 3.17, 2.85, 2.60, 2.21, 1.87, 1.58, 1.22, 0.95, 0.83]),
+    "Cấp I": pct(COST_FULL, [3.89, 3.40, 2.87, 2.57, 2.36, 2.00, 1.69, 1.43, 1.10, 0.85, 0.74]),
+    "Cấp II": pct(COST_FULL, [3.53, 3.11, 2.62, 2.34, 2.15, 1.73, 1.48, 1.25, 0.96, 0.69, 0.58]),
+    "Cấp III": pct(COST_FULL, [3.13, 2.76, 2.31, 2.07, 1.79, 1.52, 1.29, 1.10, 0.83, 0.60, 0.51]),
+    "Cấp IV": pct(COST_IV6, [2.48, 2.19, 1.82, 1.61, 1.41, 1.14]),
+  },
+  // Bảng 2.16
+  "Hạ tầng kỹ thuật": {
+    "Cấp đặc biệt": pct(COST_FULL, [3.23, 2.79, 2.35, 2.13, 1.95, 1.64, 1.39, 1.19, 0.90, 0.70, 0.63]),
+    "Cấp I": pct(COST_FULL, [3.01, 2.63, 2.21, 1.99, 1.82, 1.49, 1.28, 1.07, 0.79, 0.58, 0.49]),
+    "Cấp II": pct(COST_FULL, [2.68, 2.33, 1.97, 1.77, 1.58, 1.32, 1.14, 0.92, 0.70, 0.51, 0.43]),
+    "Cấp III": pct(COST_FULL, [2.36, 2.01, 1.72, 1.55, 1.39, 1.16, 1.02, 0.81, 0.61, 0.44, 0.36]),
+    "Cấp IV": pct(COST_IV6, [2.07, 1.76, 1.49, 1.35, 1.15, 0.98]),
+  },
+};
+
+// Tra tỷ lệ phí thiết kế theo loại × cấp × chi phí xây dựng (tỷ đồng) và số bước thiết kế.
+//  - 3 bước (có TK kỹ thuật + BVTC): Bảng lẻ (2.7…) × hệ số BVTC (1.55, công nghiệp 1.60)
+//  - 2 bước (chỉ BVTC, không yêu cầu TK kỹ thuật): Bảng chẵn (2.8…), lấy thẳng
+function designRateFor(
+  constructionType: string,
+  grade: string,
+  valueBillions: number,
+  designStep: number = 3,
+): number {
+  if (designStep === 2) {
+    const typeTables = DESIGN_BVTC_PCT[constructionType] ?? DESIGN_BVTC_PCT["Dân dụng"];
+    const table = typeTables[grade] ?? typeTables["Cấp III"];
+    return interpolateRate(table, valueBillions);
+  }
+  const typeTables = DESIGN_TECH_PCT[constructionType] ?? DESIGN_TECH_PCT["Dân dụng"];
+  const table = typeTables[grade] ?? typeTables["Cấp III"];
+  const mult = DESIGN_BVTC_MULTIPLIER[constructionType] ?? 1.55;
+  return interpolateRate(table, valueBillions) * mult;
+}
+
+// Nt = Nb − (Nb−Na)/(Ga−Gb) × (Gt−Gb)  ≡ standard linear interpolation
 function interpolateRate(table: [number, number][], valueInBillions: number): number {
   if (valueInBillions <= table[0][0]) return table[0][1];
   if (valueInBillions >= table[table.length - 1][0]) return table[table.length - 1][1];
@@ -294,7 +414,7 @@ function computeOptimize(
   //   citSavingNeeded = target - currentProfit
   //   requiredAdditionalCost = citSavingNeeded / taxRate  (deduct enough to save that much CIT)
   //
-  // Feasibility: citSavingNeeded must be ≤ 90% of current CIT.
+  // Feasibility: citSavingNeeded must be ≤ 100% of current CIT (tối đa xóa hết thuế TNDN).
   // When exceeded → scenario = "too_high" (kỳ vọng quá cao).
 
   const citSavingNeeded = Math.max(0, targetNetProfit - currentNetProfit);
@@ -303,8 +423,8 @@ function computeOptimize(
     : citSavingNeeded / input.corporateTaxRate;
   const requiredAdditionalCostMonthly = requiredAdditionalCost / 12;
 
-  // Scenario: feasible when citSavingNeeded ≤ 90% of current CIT
-  const maxFeasibleCITSaving = current.corporateTax * 0.9;
+  // Scenario: feasible khi tiết kiệm thuế cần ≤ 100% thuế TNDN hiện tại
+  const maxFeasibleCITSaving = current.corporateTax;
   const scenario: string = citSavingNeeded > maxFeasibleCITSaving ? "too_high" : "feasible";
 
   // ── Section IV: Allocation breakdown ─────────────────────────────────────
@@ -377,15 +497,18 @@ function computeOptimize(
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 router.post("/financial/fee-rates", (req: Request, res: Response): void => {
-  const body = req.body as FeeRateInput;
+  const body = req.body as FeeRateInput & { constructionType?: string; designStep?: number };
   if (!body.constructionValue || !body.constructionGrade) {
     res.status(400).json({ error: "constructionValue and constructionGrade are required" });
     return;
   }
   const valueBillions = body.constructionValue / 1_000_000_000;
-  const supervisionRate = interpolateRate(SUPERVISION_TABLE, valueBillions);
-  const designTable = DESIGN_TABLES[body.constructionGrade] ?? DESIGN_TABLES["Cấp III"];
-  const designRate = interpolateRate(designTable, valueBillions);
+  const constructionType = body.constructionType ?? "Dân dụng";
+  const designStep = body.designStep === 2 ? 2 : 3; // mặc định 3 bước nếu không truyền
+  const supervisionTable = SUPERVISION_TABLES[constructionType] ?? SUPERVISION_TABLES["Dân dụng"];
+  const supervisionRate = interpolateRate(supervisionTable, valueBillions);
+  // Thiết kế: 2 bước (chỉ BVTC, Bảng chẵn) hoặc 3 bước (TKKT + BVTC, Bảng lẻ × hệ số)
+  const designRate = designRateFor(constructionType, body.constructionGrade, valueBillions, designStep);
   const vatRate = 0.08;
   const supervisionFee = body.constructionValue * supervisionRate;
   const designFee = body.constructionValue * designRate;
@@ -421,18 +544,23 @@ router.post("/financial/calculate", (req: Request, res: Response): void => {
 });
 
 router.post("/financial/optimize", (req: Request, res: Response): void => {
-  const { financialInput, targetNetProfit, allocationL1, allocationL2 } = req.body as OptimizeInput;
+  const body = req.body as OptimizeInput & { targetNetProfitType1?: number; targetNetProfitType2?: number };
+  const { financialInput, targetNetProfit, allocationL1, allocationL2 } = body;
 
-  if (!financialInput || targetNetProfit === undefined) {
-    res.status(400).json({ error: "financialInput and targetNetProfit are required" });
+  // Mục tiêu lãi ròng có thể khác nhau cho từng loại HĐ; fallback về targetNetProfit chung
+  const target1 = body.targetNetProfitType1 ?? targetNetProfit;
+  const target2 = body.targetNetProfitType2 ?? targetNetProfit;
+
+  if (!financialInput || target1 === undefined || target2 === undefined) {
+    res.status(400).json({ error: "financialInput and target net profit (chung hoặc theo từng loại) are required" });
     return;
   }
 
   const defaultAlloc = { training: 20, equipment: 25, office: 15, consultants: 20, marketing: 10, other: 10 };
 
   res.json({
-    type1: computeOptimize(financialInput, false, targetNetProfit, allocationL1 ?? defaultAlloc),
-    type2: computeOptimize(financialInput, true, targetNetProfit, allocationL2 ?? defaultAlloc),
+    type1: computeOptimize(financialInput, false, target1, allocationL1 ?? defaultAlloc),
+    type2: computeOptimize(financialInput, true, target2, allocationL2 ?? defaultAlloc),
   });
 });
 

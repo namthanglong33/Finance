@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import { CSVLink } from "react-csv";
 import { Download } from "lucide-react";
+import type { ContractResult } from "@workspace/api-client-react";
 
 const CHART_COLORS = {
   blue: "#0079F2",
@@ -20,6 +21,62 @@ const CHART_COLORS = {
 };
 
 const CHART_COLOR_LIST = [CHART_COLORS.blue, CHART_COLORS.purple, CHART_COLORS.green, CHART_COLORS.red, CHART_COLORS.pink];
+
+/** KPI block for one contract type — keeps Loại 1 và Loại 2 trình bày đối xứng. */
+function ContractKpiGroup({
+  label,
+  accent,
+  data,
+  highlight,
+}: {
+  label: string;
+  accent: string;
+  data: ContractResult;
+  highlight: boolean;
+}) {
+  return (
+    <Card className={highlight ? "border-2" : ""} style={highlight ? { borderColor: accent } : undefined}>
+      <CardHeader className="flex-row items-center justify-between pb-3 border-b border-border/50">
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: accent }} />
+          {label}
+        </CardTitle>
+        {highlight && (
+          <span
+            className="text-xs font-semibold px-2 py-0.5 rounded-full text-white"
+            style={{ backgroundColor: accent }}
+          >
+            Tối ưu hơn
+          </span>
+        )}
+      </CardHeader>
+      <CardContent className="p-5">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs text-muted-foreground font-medium mb-1">Lãi ròng</p>
+            <p className={`text-xl font-bold ${data.netProfit >= 0 ? "text-green-600 dark:text-green-500" : "text-red-600 dark:text-red-500"}`}>
+              {formatVND(data.netProfit)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground font-medium mb-1">Biên lãi ròng</p>
+            <p className={`text-xl font-bold ${data.netMargin >= 0 ? "text-green-600 dark:text-green-500" : "text-red-600 dark:text-red-500"}`}>
+              {formatPercent(data.netMargin)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground font-medium mb-1">Thuế TNDN</p>
+            <p className="text-xl font-bold" style={{ color: accent }}>{formatVND(data.corporateTax)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground font-medium mb-1">VAT phải nộp</p>
+            <p className="text-xl font-bold text-foreground">{formatVND(data.vatDue)}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Dashboard() {
   const { result } = useFinancial();
@@ -138,7 +195,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <Card>
           <CardContent className="p-5">
             <p className="text-sm text-muted-foreground font-medium mb-1">Tổng doanh thu</p>
@@ -155,16 +212,36 @@ export default function Dashboard() {
         </Card>
         <Card>
           <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground font-medium mb-1">Thuế TNDN (Loại 1)</p>
-            <p className="text-2xl font-bold" style={{ color: CHART_COLORS.purple }}>{formatVND(result.type1.corporateTax)}</p>
+            <p className="text-sm text-muted-foreground font-medium mb-1">Lãi ròng (Loại 2)</p>
+            <p className={`text-2xl font-bold ${result.type2.netProfit >= 0 ? "text-green-600 dark:text-green-500" : "text-red-600 dark:text-red-500"}`}>
+              {formatVND(result.type2.netProfit)}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground font-medium mb-1">VAT Phải nộp (Loại 1)</p>
-            <p className="text-2xl font-bold text-foreground">{formatVND(result.type1.vatDue)}</p>
+            <p className="text-sm text-muted-foreground font-medium mb-1">Chênh lệch lãi ròng</p>
+            <p className="text-2xl font-bold text-foreground">{formatVND(Math.abs(result.type1.netProfit - result.type2.netProfit))}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {result.type1.netProfit >= result.type2.netProfit ? "Loại 1 cao hơn" : "Loại 2 cao hơn"}
+            </p>
           </CardContent>
         </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <ContractKpiGroup
+          label="Hợp đồng Loại 1"
+          accent={CHART_COLORS.blue}
+          data={result.type1}
+          highlight={result.type1.netProfit >= result.type2.netProfit}
+        />
+        <ContractKpiGroup
+          label="Hợp đồng Loại 2"
+          accent={CHART_COLORS.purple}
+          data={result.type2}
+          highlight={result.type2.netProfit > result.type1.netProfit}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

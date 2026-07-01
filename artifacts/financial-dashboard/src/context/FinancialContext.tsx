@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
+import { usePersistentState } from "@/hooks/use-persistent-state";
 import type { FinancialInput, FinancialResult } from "@workspace/api-client-react";
 
 export const DEFAULT_INPUT: FinancialInput = {
@@ -6,7 +7,7 @@ export const DEFAULT_INPUT: FinancialInput = {
   supervisionRate: 0.03285,
   designRate: 0.0341,
   kickbackRateType1: 0.55,
-  kickbackRateType2: 0.40,
+  kickbackRateType2: 0.35,
   corporateTaxRate: 0.17,
   directorSalaryMonthly: 15000000,
   numTechnicians: 1,
@@ -35,7 +36,7 @@ interface FinancialContextType {
 const FinancialContext = createContext<FinancialContextType | undefined>(undefined);
 
 export function FinancialProvider({ children }: { children: ReactNode }) {
-  const [input, setInput] = useState<FinancialInput>(DEFAULT_INPUT);
+  const [input, setInput] = usePersistentState<FinancialInput>("ntl.financial.input", DEFAULT_INPUT);
   const [result, setResult] = useState<FinancialResult | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 

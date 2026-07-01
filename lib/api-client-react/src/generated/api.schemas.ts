@@ -20,6 +20,10 @@ export interface FeeRateInput {
   equipmentCost?: number;
   /** Construction grade: Cấp đặc biệt | Cấp I | Cấp II | Cấp III | Cấp IV */
   constructionGrade: string;
+  /** Construction type for supervision rate lookup (Bảng 2.24 TT38/2026): Dân dụng | Giao thông */
+  constructionType?: string;
+  /** Số bước thiết kế (gói thiết kế): 2 = chỉ BVTC (Bảng chẵn) | 3 = TKKT + BVTC (Bảng lẻ × hệ số). Mặc định 3. */
+  designStep?: number;
 }
 
 export interface FeeRateResult {
@@ -134,8 +138,12 @@ export interface CostAllocation {
 
 export interface OptimizeInput {
   financialInput: FinancialInput;
-  /** Target annual net profit (VND) */
-  targetNetProfit: number;
+  /** Target annual net profit (VND) — chung cho cả 2 loại nếu không truyền riêng */
+  targetNetProfit?: number;
+  /** Target annual net profit cho HĐ Loại 1 (VND) */
+  targetNetProfitType1?: number;
+  /** Target annual net profit cho HĐ Loại 2 (VND) */
+  targetNetProfitType2?: number;
   allocationL1: CostAllocation;
   allocationL2: CostAllocation;
 }
