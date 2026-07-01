@@ -56,3 +56,4 @@ Trên Windows có thể dùng `start.bat`; trên macOS/Linux dùng `./start.sh`.
 | `finance/lib/api-client-react` | API client cho React |
 | `finance/lib/db` | Schema database (Drizzle) |
 | `finance/scripts` | Script tiện ích |
+# Finance
